@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Autobahn Rush</title>
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+<div id="flash"></div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <div class="hud-tl">
+    <div class="score"><span id="h-score">0</span><small>PTS</small></div>
+    <div class="sub"><span id="h-dist">0.0 km</span> · <span id="h-combo"></span></div>
+    <div class="damage"><i id="h-damage"></i></div><div class="tiny">CHASSIS</div>
+  </div>
+  <div class="hud-tr">
+    <div id="h-sign" class="sign free"><span></span></div>
+    <div class="env"><b id="h-clock">09:30</b><span id="h-weather">☀ Clear</span></div>
+  </div>
+  <div class="hud-bl" id="h-radio">
+    <div class="tiny"><span id="h-station">RADIO OFF</span> <em id="h-freq"></em></div>
+    <div class="track" id="h-track">—</div>
+    <div class="artist" id="h-artist"></div>
+    <div class="keys"><kbd>Q</kbd><kbd>E</kbd> station · <kbd>N</kbd> next</div>
+  </div>
+  <div class="hud-br">
+    <div class="gear"><span id="h-gear">1</span></div>
+    <div class="speed"><span id="h-speed">0</span><small id="h-unit">km/h</small></div>
+    <div class="rpm"><i id="h-rpm"></i></div>
+  </div>
+  <div id="toasts"></div>
+</div>
+
+<!-- ============ MAIN MENU ============ -->
+<section id="s-main" class="screen">
+  <header class="brand"><div class="a-badge">A<b>9</b></div><h1>AUTOBAHN<span>RUSH</span></h1><p>Keine Geschwindigkeitsbegrenzung. Meistens.</p></header>
+  <nav class="menu">
+    <button data-go="play" class="primary">PLAY<small>Freie Fahrt</small></button>
+    <button data-go="garage">GARAGE<small id="m-car">—</small></button>
+    <button data-go="music">MUSIC<small id="m-radio">Radio</small></button>
+    <button data-go="settings">SETTINGS<small>Audio · graphics · world</small></button>
+  </nav>
+  <footer class="hint"><span id="m-best"></span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive · <kbd>F</kbd> Lichthupe · <kbd>H</kbd> horn · <kbd>C</kbd> camera · <kbd>Q</kbd><kbd>E</kbd> radio · <kbd>Esc</kbd> pause</span></footer>
+</section>
+
+<!-- ============ GARAGE ============ -->
+<section id="s-garage" class="screen hidden">
+  <div class="panel side">
+    <div class="tiny">GARAGE · <span id="g-index">1 / 6</span></div>
+    <h2 id="g-name">—</h2>
+    <div class="muted" id="g-sub"></div>
+    <div class="specs">
+      <div><b id="g-ps">510</b><small>PS</small></div><div><b id="g-vmax">290</b><small>km/h</small></div><div><b id="g-acc">3.9</b><small>0–100 s</small></div>
+    </div>
+    <div class="muted" id="g-engine"></div>
+    <div class="bars">
+      <label>Top speed<i><u id="g-b1"></u></i></label><label>Acceleration<i><u id="g-b2"></u></i></label><label>Handling<i><u id="g-b3"></u></i></label>
+    </div>
+    <div class="tiny">PAINT</div><div class="swatches" id="g-colors"></div>
+    <div class="row"><button id="g-prev" class="sq">‹</button><button id="g-rev" class="grow">HOLD TO REV</button><button id="g-next" class="sq">›</button></div>
+    <div class="row"><button data-go="main" class="grow">BACK</button><button data-go="play" class="grow primary">DRIVE</button></div>
+  </div>
+  <div class="drag-hint">drag to rotate</div>
+</section>
+
+<!-- ============ MUSIC ============ -->
+<section id="s-music" class="screen hidden">
+  <div class="panel side wide">
+    <div class="tiny">MUSIC · RADIO</div><h2>Stations</h2>
+    <div class="stations" id="mu-stations"></div>
+    <div class="now"><div><div class="tiny" id="mu-station">RADIO OFF</div><div class="track" id="mu-track">—</div><div class="artist" id="mu-artist"></div></div>
+      <div class="row"><button class="sq" id="mu-prev">⏮</button><button class="sq" id="mu-off">⏻</button><button class="sq" id="mu-next">⏭</button></div></div>
+    <div class="tiny">MEINE MUSIK · YOUR OWN TRACKS</div>
+    <p class="muted small">The built-in stations are original generated music. Want that one specific song for the left lane? Add your own audio files here — they stay in this browser and play on the <b>MEINE MUSIK</b> station.</p>
+    <div class="usertracks" id="mu-user"></div>
+    <div class="row"><label class="btn grow">ADD AUDIO FILES<input type="file" id="mu-files" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" multiple hidden></label><button data-go="back" class="grow">BACK</button></div>
+  </div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section id="s-settings" class="screen hidden">
+  <div class="panel side wide">
+    <div class="tiny">SETTINGS</div><h2>Audio</h2>
+    <div class="form">
+      <label>Master<input type="range" min="0" max="100" data-set="master"></label>
+      <label>Music<input type="range" min="0" max="100" data-set="music"></label>
+      <label>Engine<input type="range" min="0" max="100" data-set="engine"></label>
+      <label>Effects<input type="range" min="0" max="100" data-set="sfx"></label>
+    </div>
+    <h2>World</h2>
+    <div class="form">
+      <label>Time of day<select data-set="time"><option value="cycle">Day / night cycle</option><option value="dawn">Sunrise</option><option value="day">Midday</option><option value="sunset">Sunset</option><option value="night">Night</option></select></label>
+      <label>Weather<select data-set="weather"><option value="dynamic">Dynamic</option><option value="clear">Clear</option><option value="cloudy">Cloudy</option><option value="overcast">Overcast</option><option value="rain">Rain</option><option value="storm">Thunderstorm</option><option value="mist">Mist</option><option value="snow">Snow</option></select></label>
+      <label>Traffic<select data-set="traffic"><option value="0.6">Light</option><option value="1">Normal</option><option value="1.5">Rush hour</option></select></label>
+    </div>
+    <h2>Display</h2>
+    <div class="form">
+      <label>Graphics<select data-set="quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+      <label>Speed unit<select data-set="units"><option value="kmh">km/h</option><option value="mph">mph</option></select></label>
+      <label>Camera shake<select data-set="shake"><option value="1">On</option><option value="0">Off</option></select></label>
+    </div>
+    <div class="row"><button data-go="back" class="grow primary">DONE</button></div>
+  </div>
+</section>
+
+<!-- ============ PAUSE / GAME OVER ============ -->
+<section id="s-pause" class="screen center hidden">
+  <div class="panel"><div class="tiny">PAUSED</div><h2>Rastplatz</h2>
+    <nav class="menu small"><button data-go="resume" class="primary">RESUME</button><button data-go="play">RESTART</button><button data-go="music">MUSIC</button><button data-go="settings">SETTINGS</button><button data-go="main">MAIN MENU</button></nav></div>
+</section>
+<section id="s-over" class="screen center hidden">
+  <div class="panel"><div class="tiny" id="o-kicker">TOTALSCHADEN</div><h2 id="o-score">0</h2><div class="muted" id="o-best"></div>
+    <div class="specs four"><div><b id="o-dist">0</b><small>km</small></div><div><b id="o-top">0</b><small id="o-unit">top km/h</small></div><div><b id="o-near">0</b><small>near misses</small></div><div><b id="o-fines">0</b><small>Blitzer</small></div></div>
+    <nav class="menu small"><button data-go="play" class="primary">AGAIN</button><button data-go="garage">GARAGE</button><button data-go="main">MAIN MENU</button></nav></div>
+</section>
+
+<div id="touch" class="hidden"><button data-t="left">‹</button><button data-t="right">›</button><button data-t="brake" class="r">BRAKE</button></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
