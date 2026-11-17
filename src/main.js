@@ -15,12 +15,13 @@ import { Vehicle } from './vehicle.js';
 import { sat, resolve, walls } from './physics.js';
 import { Cockpit } from './cockpit.js';
 import { Fx } from './fx.js';
+import { isTouch, TouchControls, enterGameMode, releaseWake, haptic, setHaptics } from './mobile.js';
 
 const $ = (id) => document.getElementById(id);
 const KMH = 3.6, clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp;
 
 /* ------------------------------ settings ------------------------------ */
-const DEFAULTS = { master: 80, music: 70, engine: 80, sfx: 80, time: 'cycle', weather: 'dynamic', traffic: '1', quality: 'high', units: 'kmh', shake: '1', car: 0, colors: {}, station: 0, best: 0, hidden: {}, cam: 0 };
+const DEFAULTS = { master: 80, music: 70, engine: 80, sfx: 80, time: 'cycle', weather: 'dynamic', traffic: '1', quality: 'auto', units: 'kmh', shake: '1', car: 0, colors: {}, station: 0, best: 0, hidden: {}, cam: 0, controls: 'buttons', gas: 'auto', haptics: '1' };
 let settings = { ...DEFAULTS };
 try { settings = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('autobahn-rush') || '{}') }; } catch {}
 const save = () => { try { localStorage.setItem('autobahn-rush', JSON.stringify(settings)); } catch {} };
@@ -35,8 +36,10 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
 let composer = null, bloom = null;
+let autoQ = isTouch ? 'medium' : 'high';
 function setupQuality() {
-  const q = settings.quality, dpr = Math.min(window.devicePixelRatio || 1, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1);
+  const q = settings.quality === 'auto' ? autoQ : settings.quality;
+  const dpr = Math.min(window.devicePixelRatio || 1, isTouch ? (q === 'high' ? 1.75 : q === 'medium' ? 1.3 : 1) : (q === 'high' ? 2 : q === 'medium' ? 1.5 : 1));
   renderer.setPixelRatio(dpr); renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   if (composer) { composer.dispose(); composer = null; }
@@ -71,7 +74,7 @@ let carMesh = null, shadow = null;
 const veh = new Vehicle(CARS[0]);
 const run = { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0 };
 const view = { pitch: 0, lean: 0, camYaw: 0, head: new THREE.Vector3(), headRoll: 0 };
-let mode = 'menu', prevScreen = 'main', camMode = +settings.cam || 0, shake = 0, orbit = 0.75, orbitV = 0, revHeld = false, flashT = 0, camX = 0, touchMode = false;
+let mode = 'menu', prevScreen = 'main', camMode = +settings.cam || 0, shake = 0, orbit = 0.75, orbitV = 0, revHeld = false, flashT = 0, camX = 0, touchMode = isTouch;
 
 function setCar(i) {
   i = (i + CARS.length) % CARS.length; settings.car = i; save();
@@ -107,16 +110,30 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { keys[e.code] = false; if (e.code === 'KeyH') audio.horn(false); });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; audio.horn(false); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') go('pause'); });
-const touch = {};
-for (const b of document.querySelectorAll('#touch button')) { const k = b.dataset.t; b.addEventListener('pointerdown', (e) => { e.preventDefault(); touch[k] = true; }); for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => { touch[k] = false; }); }
-addEventListener('touchstart', () => { touchMode = true; }, { once: true, passive: true });
+// phones: on-screen pedals and steering, or tilt
+const tc = new TouchControls($('touch'), (a) => {
+  if (mode !== 'play') return;
+  if (a === 'pause') go('pause');
+  else if (a === 'cam') { camMode = (camMode + 1) % 3; settings.cam = camMode; save(); toast(['CHASE CAM', 'FAR CAM', 'COCKPIT'][camMode], '', ''); }
+  else if (a === 'flash') { flashT = 0.35; traffic.flashAt(veh); }
+  else if (a === 'radio') audio.radio?.cycle(1);
+  else if (a === 'recover') recover();
+});
+function applyControls() { tc.setMode(settings.controls, settings.gas === 'auto'); setHaptics(settings.haptics === '1'); }
+function setTouchMode(on) { touchMode = on; document.body.classList.toggle('touch', on); if (mode === 'play') show(null); }
+setTouchMode(isTouch);
+addEventListener('touchstart', () => { if (!touchMode) setTouchMode(true); }, { passive: true });
+document.addEventListener('contextmenu', (e) => { if (touchMode) e.preventDefault(); });
+// landscape only on phones
+function checkOrientation() { $('rotate').classList.toggle('hidden', !(touchMode && innerHeight > innerWidth * 1.05)); }
+addEventListener('resize', checkOrientation); addEventListener('orientationchange', () => setTimeout(checkOrientation, 200));
 
 function readInput(dt) {
   let t = keys.KeyW || keys.ArrowUp ? 1 : 0, b = keys.KeyS || keys.ArrowDown || keys.Space ? 1 : 0, s = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
-  if (touchMode) { t = touch.brake ? 0 : 1; b = touch.brake ? 1 : 0; s = (touch.right ? 1 : 0) - (touch.left ? 1 : 0); }
+  if (touchMode) { t = Math.max(t, tc.throttle); b = Math.max(b, tc.brake); if (tc.steer) s = tc.steer; }
   const gp = navigator.getGamepads ? navigator.getGamepads()[0] : null;
   if (gp) { if (Math.abs(gp.axes[0]) > 0.12) s = gp.axes[0]; t = Math.max(t, gp.buttons[7]?.value || 0, gp.buttons[0]?.value || 0); b = Math.max(b, gp.buttons[6]?.value || 0); }
-  input.throttle = t; input.brake = b; input.steer += (s - input.steer) * Math.min(1, dt * 9);
+  input.throttle = t; input.brake = b; input.steer += (s - input.steer) * Math.min(1, dt * (9 + 11 * clamp(1 - veh.speed / 36, 0, 1)));   // snappier at low speed
 }
 
 /* ------------------------------ game flow ------------------------------ */
@@ -127,6 +144,7 @@ function startRun() {
   camX = veh.x; view.camYaw = 0; $('toasts').innerHTML = '';
   toast('FREIE FAHRT', 'No limit. Don\'t hit anything.', 'good');
   showRadioPop();
+  if (touchMode) { enterGameMode(); setTimeout(() => tc.calibrate(), 250); }
 }
 function toast(text, sub, cls = '') {
   const t = document.createElement('div'); t.className = 'toast ' + cls; t.textContent = text;
@@ -140,13 +158,13 @@ function go(target) {
   if (target === 'back') target = prevScreen;
   switch (target) {
     case 'play': mode = 'play'; startRun(); show(null); break;
-    case 'resume': mode = 'play'; show(null); break;
-    case 'pause': mode = 'paused'; prevScreen = 'pause'; show('pause'); break;
+    case 'resume': mode = 'play'; show(null); if (touchMode) { enterGameMode(); tc.calibrate(); } break;
+    case 'pause': mode = 'paused'; prevScreen = 'pause'; show('pause'); releaseWake(); break;
     case 'main': mode = 'menu'; prevScreen = 'main'; resetToCruise(); updateMainUI(); show('main'); break;
     case 'garage': mode = 'garage'; prevScreen = 'main'; resetToCruise(); updateGarageUI(); show('garage'); break;
     case 'music': if (mode !== 'paused') { if (mode !== 'menu') resetToCruise(); mode = 'menu'; prevScreen = 'main'; } musicSel = audio.radio?.station >= 0 ? audio.radio.station : musicSel; updateMusicUI(); show('music'); break;
     case 'settings': if (mode !== 'paused') { if (mode !== 'menu') resetToCruise(); mode = 'menu'; prevScreen = 'main'; } show('settings'); break;
-    case 'over': mode = 'over'; show('over'); break;
+    case 'over': mode = 'over'; show('over'); releaseWake(); break;
   }
 }
 function resetToCruise() { traffic.reset(); police.reset(); fx.reset(); veh.reset(LANES[1], veh.s, veh.vs); }
@@ -195,7 +213,7 @@ function physics(dt, driving) {
       if (dv > 0.6) hurt(dv, 'wall');
       veh.scrape = Math.min(1, veh.speed / 25);
       if (Math.random() < 0.5) fx.spark(hw.p[0], 0.35, hw.p[1], veh.vx, veh.vs, 2);
-      if (dv > 4) { audio.crash(clamp(dv / 15, 0.2, 1)); fx.debris(hw.p[0], 0.5, hw.p[1], veh.vx, veh.vs, 4, PAINT()); shake = Math.max(shake, clamp(dv / 25, 0.1, 0.5)); }
+      if (dv > 4) { audio.crash(clamp(dv / 15, 0.2, 1)); haptic(Math.round(20 + dv * 6)); fx.debris(hw.p[0], 0.5, hw.p[1], veh.vx, veh.vs, 4, PAINT()); shake = Math.max(shake, clamp(dv / 25, 0.1, 0.5)); }
       if (dv > 3 && veh.sideways > 0.45 && Math.abs(veh.w) > 9 && Math.random() < 0.35) veh.startRoll(Math.sign(hw.n[0]), Math.abs(veh.w));
     }
     // traffic
@@ -215,7 +233,7 @@ function physics(dt, driving) {
   // rollover events
   for (const e of veh.events) {
     if (e.type === 'roll') { endRun('ÜBERSCHLAG'); toast('ÜBERSCHLAG!', '', 'bad'); audio.crash(1); audio.glass(); shake = 0.6; }
-    if (e.type === 'impact') { audio.impact(e.strength); fx.debris(veh.x, 0.4, veh.s, veh.vx, veh.vs, 3 + (e.strength * 8 | 0), PAINT()); fx.puff(veh.x, 0.3, veh.s, veh.vx, veh.vs, 3, false, 2); shake = Math.max(shake, e.strength * 0.5); if (e.strength > 0.5) audio.glass(); }
+    if (e.type === 'impact') { audio.impact(e.strength); haptic(Math.round(30 + e.strength * 80)); fx.debris(veh.x, 0.4, veh.s, veh.vx, veh.vs, 3 + (e.strength * 8 | 0), PAINT()); fx.puff(veh.x, 0.3, veh.s, veh.vx, veh.vs, 3, false, 2); shake = Math.max(shake, e.strength * 0.5); if (e.strength > 0.5) audio.glass(); }
   }
   veh.events.length = 0;
 }
@@ -228,13 +246,13 @@ function carHit(c, j, hit) {
   const dv = j / veh.m, dvc = j / c.m;
   hurt(dv, 'car'); traffic.knock(c, dvc);
   const strength = clamp(Math.max(dv, dvc) / 12, 0.15, 1);
-  if (performance.now() - run.lastHit > 180) { audio.crash(strength); if (strength > 0.4) audio.glass(); run.lastHit = performance.now(); }
+  if (performance.now() - run.lastHit > 180) { audio.crash(strength); if (strength > 0.4) audio.glass(); run.lastHit = performance.now(); haptic(Math.round(25 + strength * 90)); }
   fx.debris(hit.p[0], 0.55, hit.p[1], (veh.vx + c.vx) / 2, (veh.vs + c.vs) / 2, 2 + (strength * 10 | 0), c.mesh.userData.paint ? c.mesh.userData.paint.color.getHex() : PAINT());
   shake = Math.max(shake, strength * 0.6); run.combo = 0;
   if (mode !== 'play' || veh.wrecked) return;
   // touching another car and driving on is a crime
   if (c.police) { if (police.active) { police.trigger('WIDERSTAND', 40, 4); } }
-  else if (!c.touched) { c.touched = true; if (police.trigger('UNFALLFLUCHT', 45, 3)) toast('UNFALLFLUCHT', 'Polizei alarmiert', 'bad'); }
+  else if (!c.touched) { c.touched = true; if (police.trigger('UNFALLFLUCHT', 45, 3)) { toast('UNFALLFLUCHT', 'Polizei alarmiert', 'bad'); haptic([40, 40, 40]); } }
   if (Math.abs(hit.n[0]) > 0.7 && veh.sideways > 0.45 && Math.abs(veh.w) > 10 && Math.random() < 0.25) veh.startRoll(Math.sign(-hit.n[0]) || 1, Math.abs(veh.w));
 }
 function recover() {
@@ -267,17 +285,17 @@ function rules(dt) {
       if (gap < 5 && dvk > 15) audio.whoosh(clamp((c.x - veh.x) / 4, -1, 1), clamp(dvk / 200, 0, 1) * (c.kind === 'truck' ? 1.3 : 1));
       if (gap < 1.15 && gap > 0.02 && dvk > 30 && !c.touched && run.wreckT <= 0 && !c.police) {
         run.combo = Math.min(9, run.combo + 1); run.comboT = 5; run.near++; const pts = Math.round((100 + dvk) * run.combo); run.score += pts;
-        toast(`NEAR MISS ×${run.combo}`, `+${pts}`, 'good'); audio.bonus();
+        toast(`NEAR MISS ×${run.combo}`, `+${pts}`, 'good'); audio.bonus(); haptic(12);
       }
     } else if (c.passed && c.s - c.L / 2 > veh.s + veh.L / 2 + 4) c.passed = false;
   }
   // police
   const res = police.update(dt, veh, traffic); world.policeActive = police.active;
-  if (res === 'busted') { endRun('FESTGENOMMEN'); toast('FESTGENOMMEN', 'Aussteigen, Hände aufs Dach.', 'bad'); audio.busted(); }
+  if (res === 'busted') { endRun('FESTGENOMMEN'); toast('FESTGENOMMEN', 'Aussteigen, Hände aufs Dach.', 'bad'); audio.busted(); haptic([80, 60, 80, 60, 200]); }
   else if (res === 'escaped') { run.score += 2500; toast('ENTKOMMEN!', 'Polizei abgehängt · +2500', 'good'); audio.bonus(); }
   else if (res === 'gaveup') { run.score += 1500; toast('POLIZEI GIBT AUF', '+1500', 'good'); audio.bonus(); }
   // stuck facing the wrong way: offer a recovery
-  if (!veh.wrecked && veh.speed < 3 && Math.abs(veh.psi) > 0.5) { run.recoverT += dt; if (run.recoverT > 1.2 && !run.hintShown) { run.hintShown = true; toast('DRÜCKE R', 'to get back on track', ''); } if (run.recoverT > 6) recover(); }
+  if (!veh.wrecked && veh.speed < 3 && Math.abs(veh.psi) > 0.5) { run.recoverT += dt; if (run.recoverT > 1.2 && !run.hintShown) { run.hintShown = true; toast(touchMode ? 'TAP ↻' : 'DRÜCKE R', 'to get back on track', ''); } if (run.recoverT > 6) recover(); }
   else { run.recoverT = 0; if (veh.speed > 10) run.hintShown = false; }
   if (run.wreckT > 0) { run.wreckT += dt; if (run.wreckT > (veh.rolling ? 2 : 2.4) && (veh.settled || !veh.rolling) && veh.speed < 4 && mode === 'play') gameOver(); else if (run.wreckT > 9 && mode === 'play') gameOver(); }
 }
@@ -371,6 +389,7 @@ function updateHUD() {
   if (sign.className !== cls) sign.className = cls; setText('h-sign', limit ? String(settings.units === 'mph' ? Math.round(limit / 1.609) : limit) : '');
   document.querySelector('.speed').classList.toggle('over', !!over);
   setText('h-clock', sky.clockString()); const w = WEATHERS[sky.weather]; setText('h-weather', `${w.icon} ${w.label}`);
+  $('touch').querySelector('.recover').classList.toggle('hidden', !(run.recoverT > 1.2));
   const slip = $('h-slip'); slip.classList.toggle('hidden', !(veh.sliding || veh.onSlick) || veh.rolling);
   setText('h-slip', veh.onSlick ? (world.spills.find((s) => s.kind === 'oil') ? 'ÖL!' : 'GLATT!') : 'SLIDE');
   // police pill
@@ -400,10 +419,10 @@ function updateGarageUI() {
 }
 $('g-prev').onclick = () => { setCar(settings.car - 1); audio.click(); }; $('g-next').onclick = () => { setCar(settings.car + 1); audio.click(); };
 const rev = $('g-rev'); rev.addEventListener('pointerdown', () => { boot(); revHeld = true; }); for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) rev.addEventListener(ev, () => { revHeld = false; });
-let dragging = false;
-addEventListener('pointerdown', (e) => { if (mode === 'garage' && !e.target.closest('.panel')) dragging = true; });
-addEventListener('pointerup', () => { dragging = false; });
-addEventListener('pointermove', (e) => { if (dragging) { orbit -= e.movementX * 0.008; orbitV = -e.movementX * 0.3; } });
+let dragging = false, dragX = 0;
+addEventListener('pointerdown', (e) => { if (mode === 'garage' && !e.target.closest('.panel')) { dragging = true; dragX = e.clientX; } });
+addEventListener('pointerup', () => { dragging = false; }); addEventListener('pointercancel', () => { dragging = false; });
+addEventListener('pointermove', (e) => { if (dragging) { const dx = e.clientX - dragX; dragX = e.clientX; orbit -= dx * 0.008; orbitV = -dx * 0.3; } });
 
 let musicSel = 0, confirmDel = null;   // { i, until }: a delete waiting for its second click
 function updateRadioUI(info) {
@@ -456,16 +475,23 @@ function applyAudioSettings() { audio.vol = { master: settings.master / 100, mus
 function applyWorldSettings() { sky.setTimeMode(settings.time); sky.setWeatherMode(settings.weather); traffic.density = +settings.traffic; }
 for (const el of document.querySelectorAll('[data-set]')) {
   const k = el.dataset.set; el.value = settings[k];
-  el.addEventListener('input', () => { settings[k] = el.type === 'range' ? +el.value : el.value; save(); applyAudioSettings(); applyWorldSettings(); if (k === 'quality') setupQuality(); });
+  el.addEventListener('input', () => { settings[k] = el.type === 'range' ? +el.value : el.value; save(); applyAudioSettings(); applyWorldSettings(); applyControls(); if (k === 'quality') setupQuality(); });
 }
 
 /* ------------------------------ main loop ------------------------------ */
 const clock = new THREE.Clock();
 let elapsed = 0;
+const perf = { t: 0, n: 0 };
 function frame() {
   requestAnimationFrame(frame);
-  simulate(Math.min(0.05, clock.getDelta()));
+  const real = clock.getDelta();
+  simulate(Math.min(0.05, real));
   render();
+  // Auto graphics: if driving runs below ~28 fps for a few seconds, step the quality down
+  if (settings.quality === 'auto' && mode === 'play' && autoQ !== 'low') {
+    perf.t += real; perf.n++;
+    if (perf.t > 4) { if (perf.t / perf.n > 1 / 28) { autoQ = autoQ === 'high' ? 'medium' : 'low'; setupQuality(); toast('GRAPHICS: ' + autoQ.toUpperCase(), 'for smoother driving', ''); } perf.t = 0; perf.n = 0; }
+  } else { perf.t = 0; perf.n = 0; }
 }
 function sirenState() {
   let best = null, bd = Infinity;
@@ -511,7 +537,9 @@ function render() {
   if (composer) composer.render(); else renderer.render(scene, camera);
 }
 
-setupQuality(); applyWorldSettings(); setCar(settings.car); updateMainUI(); updateMusicUI();
+setupQuality(); applyWorldSettings(); applyControls(); checkOrientation(); setCar(settings.car); updateMainUI(); updateMusicUI();
+// offline play and installing as an app (needs http(s), not file://)
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 sky.setWeather(settings.weather === 'dynamic' ? 'clear' : settings.weather, true);
 window.__game = { simulate, input, keys, player: veh, veh, run, sky, world, traffic, police, audio, settings, cockpit, fx, go, setCar,
   get mode() { return mode; }, set cam(v) { camMode = v; }, get cam() { return camMode; }, set orbit(v) { orbit = v; } };

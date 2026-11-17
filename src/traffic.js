@@ -10,7 +10,7 @@ import { sat, resolve } from './physics.js';
 const KMH = 1 / 3.6;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = THREE.MathUtils.clamp;
-const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, police: 1900 };
+const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, police: 2075 };
 
 export class Traffic {
   constructor(world) {

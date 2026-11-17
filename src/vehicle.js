@@ -68,7 +68,9 @@ export class Vehicle {
     // understeers at the limit. Water takes the rear's margin away first, so
     // in rain and storms the tail lets go much more easily.
     const wetLoss = clamp(1 - env.base, 0, 1), rearBias = 1.1 - wetLoss * 0.42;
-    const muF = (muFL + muFR) / 2 * 1.05, muR = (muRL + muRR) / 2 * 1.05 * rearBias;
+    // game feel: extra grip at low speed (none from ~130 km/h up) so the car is nimble in traffic
+    const low = clamp(1 - au / 36, 0, 1), agile = 1 + 0.35 * low;
+    const muF = (muFL + muFR) / 2 * 1.05 * agile, muR = (muRL + muRR) / 2 * 1.05 * rearBias * agile;
     this.mu = (muF + muR) / 2; this.muBase = env.base;
     this.onSlick = Math.min(muFL, muFR, muRL, muRR) < env.base * 0.6;
 
@@ -93,7 +95,8 @@ export class Vehicle {
     // steering: the angle that is available shrinks with speed, but always
     // allows about 1.5x what dry tyres can hold, so yanking the wheel can
     // break traction (and on a wet road it easily does)
-    const dmax = clamp(1.5 * G * wb / Math.max(au, 4) ** 2, 0.006, 0.5);
+    // below ~130 km/h the steering gets quicker and a little sharper; above that it is unchanged
+    const dmax = clamp((1.5 + 0.6 * low) * G * wb / Math.max(au, 4) ** 2, 0.006, 0.55);
     const beta = Math.atan2(w, Math.max(au, 0.5));
     let target = inp.steer * dmax;
     if (env.assist && Math.abs(inp.steer) < 0.05 && Math.abs(beta) < 0.3 && au > 3) {
@@ -101,11 +104,14 @@ export class Vehicle {
       const rd = clamp(-this.psi * 2.2, -0.35, 0.35);
       target = clamp((rd + (rd - this.r) * 0.6) * wb / au, -dmax * 0.8, dmax * 0.8);
     }
-    this.delta += clamp(target - this.delta, -h * dmax / 0.15, h * dmax / 0.15);
+    const rate = h * dmax / (0.15 - 0.08 * low);
+    this.delta += clamp(target - this.delta, -rate, rate);
 
     // tyre slip angles and lateral forces
     const uu = Math.max(au, 3);
-    const aF = Math.atan2(w + a * this.r, uu) - this.delta * sgn(u), aR = Math.atan2(w - b * this.r, uu);
+    // rear-wheel steering at low speed: rear wheels turn against the fronts, so the car turns in faster
+    const dR = -this.delta * 0.45 * low * low;
+    const aF = Math.atan2(w + a * this.r, uu) - this.delta * sgn(u), aR = Math.atan2(w - b * this.r, uu) - dR * sgn(u);
     let FyF = -muF * FzF * tyre(aF), FyR = -muR * FzR * tyre(aR) * 0.96;
 
     // longitudinal: brakes with ABS, drive with a sporty traction control
@@ -130,16 +136,17 @@ export class Vehicle {
 
     // sum in the car frame
     const cd = Math.cos(this.delta), sd = Math.sin(this.delta);
-    const FX = FxF * cd - FyF * sd + FxR - this.kd * u * Math.abs(u) - (au > 0.3 ? sgn(u) * 0.012 * m * G : 0);
-    const FY = FxF * sd + FyF * cd + FyR;
-    let Mz = a * (FxF * sd + FyF * cd) - b * FyR;
+    const cr = Math.cos(dR), sr = Math.sin(dR);
+    const FX = FxF * cd - FyF * sd + FxR * cr - FyR * sr - this.kd * u * Math.abs(u) - (au > 0.3 ? sgn(u) * 0.012 * m * G : 0);
+    const FY = FxF * sd + FyF * cd + FxR * sr + FyR * cr;
+    let Mz = a * (FxF * sd + FyF * cd) - b * (FxR * sr + FyR * cr);
     // uneven grip left/right: the side that grips more pulls harder
     const sF = (muFL - muFR) / (muFL + muFR + 1e-6), sR = (muRL - muRR) / (muRL + muRR + 1e-6);
     Mz += (FxF * sF + FxR * sR) * t2;
     // stability control: damps yaw while the car is still roughly pointing where it goes.
     // It works with the grip it has, so it is much weaker in the wet.
     if (env.assist && au > 5 && Math.abs(beta) < 0.35) {
-      const rRef = clamp(au * this.delta / wb, -this.mu * G / au, this.mu * G / au);
+      const rRef = clamp(au * (this.delta - dR) / wb, -this.mu * G / au, this.mu * G / au);
       // limited authority (it can only brake single wheels), and it loses most of it on water
       const auth = 0.1 * m * G * wb * clamp(1 - wetLoss * 1.6, 0.1, 1) * (env.esc ?? 1);
       Mz -= clamp((this.r - rRef) * this.I * 7 * this.mu, -auth, auth) * (1 - Math.abs(beta) / 0.35);

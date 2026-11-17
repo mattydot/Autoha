@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05070a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Autobahn Rush</title>
 <link rel="stylesheet" href="css/style.css">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }</script>
@@ -107,9 +114,15 @@
     </div>
     <h2>Display</h2>
     <div class="form">
-      <label>Graphics<select data-set="quality"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+      <label>Graphics<select data-set="quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
       <label>Speed unit<select data-set="units"><option value="kmh">km/h</option><option value="mph">mph</option></select></label>
       <label>Camera shake<select data-set="shake"><option value="1">On</option><option value="0">Off</option></select></label>
+    </div>
+    <h2>Controls</h2>
+    <div class="form">
+      <label>Steering<select data-set="controls"><option value="buttons">Touch buttons</option><option value="tilt">Tilt the phone</option></select></label>
+      <label>Gas<select data-set="gas"><option value="auto">Automatic (brake to slow)</option><option value="pedal">Gas pedal</option></select></label>
+      <label>Vibration<select data-set="haptics"><option value="1">On</option><option value="0">Off</option></select></label>
     </div>
     <div class="row"><button data-go="back" class="grow primary">DONE</button></div>
   </div>
@@ -127,7 +140,18 @@
     <nav class="menu small"><button data-go="play" class="primary">AGAIN</button><button data-go="garage">GARAGE</button><button data-go="main">MAIN MENU</button></nav></div>
 </section>
 
-<div id="touch" class="hidden"><button data-t="left">‹</button><button data-t="right">›</button><button data-t="brake" class="r">BRAKE</button></div>
+<div id="touch" class="hidden">
+  <div class="steer"><button data-t="left" aria-label="Steer left"><i class="arw l"></i></button><button data-t="right" aria-label="Steer right"><i class="arw r"></i></button></div>
+  <div class="pedals"><button data-t="brake" class="brake" aria-label="Brake"><span>BRAKE</span></button><button data-t="gas" class="gas" aria-label="Accelerate"><span>GAS</span></button></div>
+  <div class="actions">
+    <button data-a="pause" aria-label="Pause"><i class="ic-pause"></i></button>
+    <button data-a="cam" aria-label="Camera">CAM</button>
+    <button data-a="flash" aria-label="Flash headlights">✦</button>
+    <button data-a="radio" aria-label="Next station">FM</button>
+    <button data-a="recover" class="recover hidden" aria-label="Recover">↻</button>
+  </div>
+</div>
+<div id="rotate" class="hidden"><div class="phone"></div><b>Turn your phone sideways</b><span>Autobahn Rush is played in landscape.</span></div>
 <div id="filewarn" class="screen center hidden"><div class="panel"><div class="tiny">CAN'T START FROM A FILE</div><h2>Run it from a local server</h2>
   <p class="muted small">Browsers block game modules and audio when a page is opened straight from disk. In the game folder run:</p>
   <pre>python3 -m http.server 8000</pre><p class="muted small">then open <b>http://localhost:8000</b>.</p></div></div>

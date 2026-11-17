@@ -431,8 +431,10 @@ function textTex(text, color, w = 512, h = 96) {
   g.fillStyle = color; g.font = `bold ${h * 0.78}px "DIN Alternate","Bahnschrift","Arial Narrow",Arial,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h * 0.55);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
+// Pursuit car: an upgraded RS-Sechs Avant. Lowered, wider arches, bigger wheels, carbon aero.
 function buildPolice() {
-  const b = { ...TRAFFIC_BODIES.wagon, grille: 'kidney', head: 'slim', tail: 'L' };
+  const rs6 = CARS.find((c) => c.id === 'rs6').body;
+  const b = { ...rs6, c: 0.13, wheelR: 0.375, flare: 0.075, H: rs6.H - 0.03 };
   const paint = new THREE.MeshPhysicalMaterial({ color: 0xdfe2e6, metalness: 0.5, roughness: 0.3, clearcoat: 1 });
   const tail = tailProto.clone();
   const car = assemble(b, { paint, roof: paint, tail, plate: plateMat('BP 1-110') }, false, true);
@@ -441,11 +443,12 @@ function buildPolice() {
   const blueA = new THREE.MeshStandardMaterial({ color: 0x0a2aff, emissive: 0x2050ff, emissiveIntensity: 0.2, roughness: 0.3, transparent: true, opacity: 0.95 });
   const blueB = blueA.clone();
   const word = new THREE.MeshStandardMaterial({ map: textTex('POLIZEI', '#1f4fb8'), transparent: true, roughness: 0.4 });
+  const wordSide = new THREE.MeshStandardMaterial({ map: textTex('POLIZEI', '#ffffff'), transparent: true, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2 });
   const L = b.L, W = b.W, hw = W / 2 + 0.006, roofZ = -(b.roofF + b.roofR) / 2;
   for (const sd of [-1, 1]) {
     const st = box(0.012, 0.2, L * 0.86, blueM, sd * hw, 0.7, 0.05); car.add(st);
     const ny = box(0.012, 0.06, L * 0.86, neon, sd * hw, 0.56, 0.05); car.add(ny);
-    const w = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.36), word); w.position.set(sd * (hw + 0.004), 0.7, 0.35); w.rotation.y = sd * Math.PI / 2; car.add(w);
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.2), wordSide); w.position.set(sd * (hw + 0.008), 0.7, 0.35); w.rotation.y = sd * Math.PI / 2; car.add(w);
   }
   const hood = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.22), word); hood.rotation.x = -Math.PI / 2 + 0.12; hood.position.set(0, b.hoodH + 0.02, -(L / 2 - 0.55)); car.add(hood);
   const back = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.2), word); back.rotation.y = Math.PI; back.position.set(0, b.tailH - 0.02, L / 2 + 0.02); back.rotation.y = 0; car.add(back);
@@ -455,6 +458,12 @@ function buildPolice() {
   car.add(box(0.18, 0.1, 0.24, MATS.black, 0, b.H + 0.12, roofZ));
   // grille strobes
   car.add(box(0.12, 0.05, 0.03, blueA, -0.32, b.c + 0.2, -(L / 2) - 0.01), box(0.12, 0.05, 0.03, blueB, 0.32, b.c + 0.2, -(L / 2) - 0.01));
+  // carbon splitter, skirts, roof spoiler and diffuser fins
+  const carbon = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.3, metalness: 0.4 });
+  car.add(box(W * 0.92, 0.035, 0.32, carbon, 0, b.c + 0.0, -(L / 2) + 0.12));
+  for (const sd of [-1, 1]) car.add(box(0.07, 0.07, b.wb * 0.62, carbon, sd * (W / 2 - 0.02), b.c + 0.05, -(L / 2 - b.fo - b.wb / 2)));
+  car.add(box(W * 0.74, 0.03, 0.34, carbon, 0, b.H - 0.03, -(b.roofR) + 0.2));
+  for (const x of [-0.3, -0.1, 0.1, 0.3]) car.add(box(0.025, 0.12, 0.3, carbon, x, b.c + 0.08, L / 2 - 0.1));
   car.add(shadowMesh(L, W));
   Object.assign(car.userData, { paint, tail, blue: [blueA, blueB], isPolice: true });
   return car;

@@ -8,7 +8,7 @@ import { LANES } from './world.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-export const POLICE_VMAX = 290 / 3.6;
+export const POLICE_VMAX = 330 / 3.6;     // upgraded RS6 pursuit cars
 
 export class Police {
   constructor() { this.reset(); }
@@ -30,7 +30,7 @@ export class Police {
   _spawn(q, player, traffic) {
     let lane = q.lane ?? ((Math.random() * 3) | 0), s, v;
     if (q.where === 'ahead') { s = player.s + rand(650, 800); v = 22; lane = 2; }
-    else { s = player.s - rand(230, 320); v = clamp(player.v + 14, 40, POLICE_VMAX); }
+    else { s = player.s - rand(230, 320); v = clamp(player.v + 22, 45, POLICE_VMAX); }
     for (let k = 0; k < 3 && !traffic._free(lane, s, 30, 30); k++) lane = (lane + 1) % 3;
     const c = traffic.add('police', lane, s, v, { police: true, slot: null, leaving: false, wait: q.where === 'ahead' });
     this.cars.push(c);
@@ -113,7 +113,7 @@ export class Police {
     if (lead !== null && gap < safe * 2) vt = Math.min(vt, gap < safe ? lead * Math.max(0, gap / safe) : lead + 2);
     // closing too fast for the gap: brake now
     if (lead !== null && c.vs > lead && (c.vs - lead) ** 2 / (2 * Math.max(0.5, gap - safe * 0.6)) > 3.5) vt = Math.min(vt, lead - 2);
-    const acc = clamp((vt - c.vs) * 4, gap < 8 ? -14 : -11, 6.5);
+    const acc = clamp((vt - c.vs) * 4, gap < 8 ? -14 : -11, c.vs < 50 ? 9 : c.vs < 75 ? 6 : 3.5);
     c.vs = Math.max(0, c.vs + acc * dt); c.brake = acc < -2 ? 1 : 0; c.s += c.vs * dt;
     // sideways: move over only when the target lane is clear next to us
     const x0 = c.x, dir = Math.sign(tx - c.x);

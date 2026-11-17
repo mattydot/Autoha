@@ -163,5 +163,9 @@ The final message is for someone who did not watch you work.
   - Physics tuning has a Node test bench pattern: run the scenario many times
     across cars and weather, report rates (spins, flips), not single runs.
 - Repo: github.com/mattydot/Autoha (branch `main`).
+- Target: phones (Google Play), landscape. Every UI change must be checked
+  on an emulated phone (`devices['Pixel 7 landscape']`, short height 360 px)
+  as well as desktop. When adding or changing files, bump `VERSION` in `sw.js`
+  and list new files in its `FILES`.
 - Open items: hear and tune the engine and radio on real speakers; measure
   frame rate on a real GPU; test gamepad and touch.

@@ -29,7 +29,18 @@ Then open <http://localhost:8000>. (Opening `index.html` straight from disk does
 | `N` | Next track, `M` radio off |
 | `Esc` / `P` | Pause |
 
-Gamepads (stick + triggers) and touch screens are supported too.
+Gamepads (stick + triggers) work too.
+
+### On a phone
+
+The game is built for phones in landscape (it asks you to turn the phone if you hold it upright):
+
+- **Steering**: ◀ ▶ buttons bottom left (slide your thumb between them), or switch to **tilt steering** in Settings.
+- **Gas** is automatic by default; **BRAKE** is bottom right. Settings > Gas > *Gas pedal* adds a separate gas pedal.
+- Small buttons on the right edge: pause, camera, Lichthupe, next radio station, and ↻ to recover after a spin.
+- Vibration on crashes (can be turned off), fullscreen, screen kept awake while driving.
+- Graphics are on **Auto**: if the phone cannot keep up, quality steps down by itself.
+- It works offline and can be installed as an app. See [docs/ANDROID.md](docs/ANDROID.md) for publishing on Google Play.
 
 ## What is in it
 
@@ -37,7 +48,7 @@ Gamepads (stick + triggers) and touch screens are supported too.
 - **Driving physics** (`src/vehicle.js`): tyres that grip up to a limit and then slide, weight transfer under braking, ABS and stability control that can only do so much. Normal lane changes are safe; yanking the wheel at speed, or braking hard while turning, can break traction, and in rain, storms and snow it happens much more easily. A car sliding sideways can trip and roll over, sometimes several times.
 - **Crashes** (`src/physics.js`): cars are rigid bodies. A square rear-end just shoves the car in front; an offset hit spins both cars. Hit cars lose control, slide to a stop and sit there with hazard lights on.
 - **Cockpit view**: dashboard, steering wheel with hands, live instrument cluster (speed, revs, gear, warning lights; the M3 always has its engine and oil lights on), head-up display, centre screen, working rear-view and door mirrors, wipers and rain on the windscreen.
-- **Polizei**: touch another car and drive on, or go far too fast past a speed camera, and patrol cars come after you. They try to box you in: one behind, one in front, one on each side (never on a side with no lane). Stop inside the box and you are arrested. Outrun them or hold out until they give up.
+- **Polizei** in upgraded RS6 estates (330 km/h): touch another car and drive on, or go far too fast past a speed camera, and patrol cars come after you. They try to box you in: one behind, one in front, one on each side (never on a side with no lane). Stop inside the box and you are arrested. Outrun them or hold out until they give up.
 - **Autobahn**: three lanes each way, oncoming traffic, bridges, wind turbines. Long unrestricted stretches, and sometimes a Tempolimit zone with a speed camera. **Roadworks** close a lane with beacons, a flashing arrow trailer, yellow markings and machines. **Accidents**: an overturned tanker with oil or milk across the lanes; on oil the tyres have almost no grip, so braking or steering hard spins you.
 - **LED gantries** over the road warn about what is ahead (roadworks, accidents, oil, fog, storm, snow, police) and set variable speed limits.
 - **Weather and time**: day/night cycle with sunrise and sunset, clear, cloudy, overcast, rain, thunderstorm, fog (with fog banks you drive in and out of) and snow, changing while you drive or fixed in Settings.
@@ -61,6 +72,9 @@ src/cockpit.js              first-person interior and its displays
 src/police.js               police chases
 src/props.js                roadworks and accident-scene objects
 src/fx.js                   skid marks, debris, smoke, sparks
+src/mobile.js               touch controls, tilt, fullscreen, vibration
+sw.js, manifest.webmanifest offline support and app install (icons/ holds the app icons)
+docs/ANDROID.md             how to publish on Google Play
 src/world.js                road, signs, limit zones, roadworks, accidents, gantries
 src/traffic.js              traffic AI
 src/sky.js                  sky, day/night, weather, precipitation
