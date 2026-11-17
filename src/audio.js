@@ -47,7 +47,14 @@ export class GameAudio {
     this.radio = new Radio(ctx, this.musicGain);
     this.ready = true; this.applyVolumes();
   }
-  resume() { if (this.ctx && this.ctx.state !== 'running') this.ctx.resume(); }
+  resume() { if (this.ctx && this.ctx.state !== 'running' && !this._hidden) this.ctx.resume(); }
+  /** tab or app in the background: silence everything (engine, radio, your own files); back in front: carry on */
+  setHidden(h) {
+    this._hidden = h; if (!this.ctx) return;
+    const el = this.radio?.el;
+    if (h) { this._elWasPlaying = !!(el && !el.paused); if (this._elWasPlaying) el.pause(); this.ctx.suspend(); }
+    else { this.ctx.resume(); if (this._elWasPlaying) el.play().catch(() => {}); this._elWasPlaying = false; }
+  }
   applyVolumes() {
     if (!this.ready) return; const v = this.vol, t = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(v.master, t, 0.05); this.musicGain.gain.setTargetAtTime(v.music * 1.25, t, 0.05);

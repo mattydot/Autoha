@@ -22,6 +22,23 @@ const TRAFFIC_BODIES = {
   van: { L: 5.3, W: 2.0, H: 2.35, c: 0.2, wheelR: 0.36, wb: 3.3, fo: 0.95, hoodH: 1.25, noseH: 0.75, cowlH: 1.4, cowlX: 1.85,
     roofF: 1.3, roofR: -2.5, baseR: -2.58, beltR: 1.42, deckH: 1.4, tailH: 1.38, pillars: [0.75], grille: 'plain', head: 'plain', tail: 'plain', wing: 'none', exhaust: 'none', flare: 0, panel: true },
 };
+// more everyday cars: small city car, hatchback, people carrier, crossover, minibus, coupe
+const NONE = { wing: 'none', exhaust: 'none', flare: 0 };
+Object.assign(TRAFFIC_BODIES, {
+  city: { L: 3.65, W: 1.68, H: 1.53, c: 0.15, wheelR: 0.29, wb: 2.42, fo: 0.68, hoodH: 0.82, noseH: 0.56, cowlH: 0.97, cowlX: 0.74,
+    roofF: 0.22, roofR: -1.42, baseR: -1.76, beltR: 0.99, deckH: 0.97, tailH: 0.96, pillars: [-0.42], grille: 'plain', head: 'big', tail: 'L', ...NONE },
+  hatch: { L: 4.28, W: 1.8, H: 1.46, c: 0.15, wheelR: 0.32, wb: 2.64, fo: 0.86, hoodH: 0.86, noseH: 0.56, cowlH: 0.98, cowlX: 0.8,
+    roofF: 0.18, roofR: -1.58, baseR: -2.02, beltR: 1.0, deckH: 0.98, tailH: 0.97, pillars: [-0.32], grille: 'vw', head: 'slim', tail: 'plain', ...NONE },
+  mpv: { L: 4.55, W: 1.86, H: 1.68, c: 0.17, wheelR: 0.33, wb: 2.8, fo: 0.9, hoodH: 0.92, noseH: 0.6, cowlH: 1.05, cowlX: 1.0,
+    roofF: 0.5, roofR: -1.98, baseR: -2.22, beltR: 1.08, deckH: 1.06, tailH: 1.04, pillars: [-0.2, -1.25], grille: 'plain', head: 'angular', tail: 'L', ...NONE },
+  crossover: { L: 4.42, W: 1.86, H: 1.6, c: 0.21, wheelR: 0.35, wb: 2.68, fo: 0.88, hoodH: 0.98, noseH: 0.68, cowlH: 1.1, cowlX: 0.78,
+    roofF: 0.15, roofR: -1.62, baseR: -2.06, beltR: 1.12, deckH: 1.1, tailH: 1.06, pillars: [-0.38], grille: 'hex', head: 'slim', tail: 'bar', ...NONE, flare: 0.02 },
+  bus: { L: 4.95, W: 1.92, H: 1.96, c: 0.18, wheelR: 0.34, wb: 3.0, fo: 0.82, hoodH: 1.0, noseH: 0.72, cowlH: 1.12, cowlX: 1.6,
+    roofF: 1.2, roofR: -2.36, baseR: -2.44, beltR: 1.14, deckH: 1.12, tailH: 1.1, pillars: [0.55, -0.45, -1.45], grille: 'vw', head: 'plain', tail: 'L', ...NONE },
+  coupe: { L: 4.6, W: 1.84, H: 1.37, c: 0.15, wheelR: 0.33, wb: 2.76, fo: 0.9, hoodH: 0.82, noseH: 0.54, cowlH: 0.95, cowlX: 0.72,
+    roofF: -0.02, roofR: -1.02, baseR: -1.78, beltR: 0.98, deckH: 0.96, tailH: 0.92, pillars: [], grille: 'plain', head: 'angular', tail: 'L', ...NONE },
+});
+TRAFFIC_BODIES.sedan.head = 'slim'; TRAFFIC_BODIES.wagon.tail = 'bar'; TRAFFIC_BODIES.suv.head = 'angular'; TRAFFIC_BODIES.suv.grille = 'hex';
 export const TRAFFIC_COLORS = [0xd8d8da, 0xd8d8da, 0x9a9ea3, 0x9a9ea3, 0x18181b, 0x18181b, 0x2a2d33, 0x1d3f7a, 0x8a1c1c, 0xf2f2f2, 0x4a5a48, 0x6b4a2e, 0xb8a888, 0x2a6a8a];
 const TRUCK_COLORS = [0xf0f0f0, 0xd22b2b, 0x1b4fa8, 0xf2b600, 0x2e7d4a, 0x30343a, 0xe8660c];
 
@@ -31,6 +48,7 @@ const TRUCK_COLORS = [0xf0f0f0, 0xd22b2b, 0x1b4fa8, 0xf2b600, 0x2e7d4a, 0x30343a
 export const MATS = {
   glass: new THREE.MeshPhysicalMaterial({ color: 0x080b0f, metalness: 0.45, roughness: 0.14, clearcoat: 0.35, envMapIntensity: 0.75 }),
   lampHouse: new THREE.MeshStandardMaterial({ color: 0x0c0e12, roughness: 0.1, metalness: 0.6 }),
+  wellLiner: new THREE.MeshStandardMaterial({ color: 0x0a0a0b, roughness: 0.95, side: THREE.DoubleSide }),
   tailHouse: new THREE.MeshStandardMaterial({ color: 0x2a0406, roughness: 0.1, metalness: 0.3 }),
   black: new THREE.MeshStandardMaterial({ color: 0x0b0b0d, roughness: 0.75, metalness: 0.1 }),
   chrome: new THREE.MeshStandardMaterial({ color: 0xe6e6ea, roughness: 0.12, metalness: 1 }),
@@ -66,6 +84,7 @@ function roundedPath(pts, r0, Cls = THREE.Shape) {
   for (let i = 0; i < n; i++) {
     const p = pts[i], a = pts[(i + n - 1) % n], b = pts[(i + 1) % n];
     const r = p[2] ?? r0;
+    if (r <= 0) { if (i === 0) s.moveTo(p[0], p[1]); else s.lineTo(p[0], p[1]); continue; }   // sharp corner: no duplicate points (they break bevels)
     const da = Math.hypot(a[0] - p[0], a[1] - p[1]), db = Math.hypot(b[0] - p[0], b[1] - p[1]);
     const ra = Math.min(r, da * 0.45), rb = Math.min(r, db * 0.45);
     const p1 = [p[0] + (a[0] - p[0]) / da * ra, p[1] + (a[1] - p[1]) / da * ra];
@@ -154,6 +173,15 @@ function buildWheel(r, w, detail, sporty, side, rimMat = MATS.rim) {
 /* ------------------------------------------------------------------ */
 // Build coordinates: x forward, y up, z lateral. Rotated at the end so the
 // nose points to -Z (direction of travel).
+const ARCH_GAP = 0.075;
+// points of an arch opening (front to rear) in the side profile, from the sill line y0 up and over the wheel
+function archPts(ax, cy, ra, y0) {
+  const a0 = Math.asin(Math.max(-1, Math.min(1, (y0 - cy) / ra))), pts = [], n = 14;
+  pts.push([ax + ra * Math.cos(a0) + 0.04, y0, 0.03]);
+  for (let i = 0; i <= n; i++) { const a = a0 + (Math.PI - 2 * a0) * i / n; pts.push([ax + ra * Math.cos(a), cy + ra * Math.sin(a), 0]); }
+  pts.push([ax - ra * Math.cos(a0) - 0.04, y0, 0.03]);
+  return pts;
+}
 function buildBody(b, mats, detail, cabin = false) {
   const CH = mats.chrome || MATS.chrome;
   const g = new THREE.Group();
@@ -176,6 +204,8 @@ function buildBody(b, mats, detail, cabin = false) {
     ...(cabin ? [[b.baseR + 0.12, 0.3, 0.05], [b.cowlX - 0.1, 0.3, 0.05]] : []),
     [b.cowlX, b.cowlH, 0.35],
     [hl - 0.28, b.hoodH, 0.30], [hl, b.noseH, 0.12], [hl - 0.04, b.c + 0.05, 0.08], [hl - 0.25, b.c, 0.05],
+    // wheel arches cut out of the side, so the tyres sit in an opening instead of passing through the paint
+    ...[hl - b.fo, hl - b.fo - b.wb].flatMap((ax) => archPts(ax, b.wheelR + 0.01, b.wheelR + ARCH_GAP, b.c)),
   ], 0.1);
   g.add(mesh(warp(extrude(body, W, 0.09, 4, 10), tumble), mats.paint));
 
@@ -223,10 +253,15 @@ function buildBody(b, mats, detail, cabin = false) {
   // --- wheel arches -----------------------------------------------------
   const axF = hl - b.fo, axR = axF - b.wb;
   for (const ax of [axF, axR]) for (const s of [-1, 1]) {
-    const a = mesh(new THREE.CylinderGeometry(b.wheelR + 0.075, b.wheelR + 0.075, 0.30, 26), MATS.black, ax, b.wheelR + 0.01, s * (zAt(ax, 0.3) - 0.19));
+    // dark wheel well behind the opening: its outer cap sits just inside the tyre's inner edge
+    const z0 = zAt(ax, 0.3) - 0.34, dep = 0.30;
+    const a = mesh(new THREE.CylinderGeometry(b.wheelR + ARCH_GAP, b.wheelR + ARCH_GAP, dep, 26), MATS.black, ax, b.wheelR + 0.01, s * (z0 - dep / 2));
     a.rotation.x = Math.PI / 2; g.add(a);
-    if (b.flare) { const f = new THREE.Mesh(new THREE.TorusGeometry(b.wheelR + 0.085, b.flare * 0.55 + 0.012, 8, 28, Math.PI), mats.paint);
-      f.scale.z = 0.45; f.position.set(ax, b.wheelR + 0.01, s * (zAt(ax, 0.6) - 0.005)); g.add(f); }
+    // half-tube liner over the top of the tyre so the opening does not show daylight
+    const ln = new THREE.Mesh(new THREE.CylinderGeometry(b.wheelR + ARCH_GAP - 0.005, b.wheelR + ARCH_GAP - 0.005, zAt(ax, 0.3) - z0 + 0.02, 22, 1, true, Math.PI / 2 - 0.2, Math.PI + 0.4), MATS.wellLiner);
+    ln.rotation.x = Math.PI / 2; ln.position.set(ax, b.wheelR + 0.01, s * (zAt(ax, 0.3) + z0) / 2); g.add(ln);
+    if (b.flare) { const f = new THREE.Mesh(new THREE.TorusGeometry(b.wheelR + ARCH_GAP + 0.01, b.flare * 0.35 + 0.01, 8, 28, Math.PI + 0.3), mats.paint);
+      f.rotation.z = -0.15; f.scale.z = 0.45; f.position.set(ax, b.wheelR + 0.01, s * (zAt(ax, 0.6) - 0.01)); g.add(f); }
   }
 
   // --- front -----------------------------------------------------------
@@ -592,4 +627,6 @@ export class TrafficFactory {
     return car;
   }
 }
-export const TRAFFIC_KINDS = ['compact', 'sedan', 'wagon', 'suv', 'van'];
+export const TRAFFIC_KINDS = ['compact', 'sedan', 'wagon', 'suv', 'van', 'city', 'hatch', 'mpv', 'crossover', 'bus', 'coupe'];
+// how common each everyday car is (vans and trucks are picked separately)
+export const EVERYDAY = [['hatch', 4], ['sedan', 3], ['wagon', 3], ['compact', 2], ['suv', 2], ['crossover', 3], ['city', 1.5], ['mpv', 1.2], ['coupe', 0.8], ['bus', 0.7]];

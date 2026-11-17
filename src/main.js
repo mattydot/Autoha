@@ -109,7 +109,8 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; if (e.code === 'KeyH') audio.horn(false); });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; audio.horn(false); });
-document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') go('pause'); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') go('pause'); audio.setHidden(document.hidden); });
+addEventListener('pagehide', () => audio.setHidden(true)); addEventListener('pageshow', () => { if (!document.hidden) audio.setHidden(false); });
 // phones: on-screen pedals and steering, or tilt
 const tc = new TouchControls($('touch'), (a) => {
   if (mode !== 'play') return;
@@ -221,8 +222,9 @@ function physics(dt, driving) {
     for (const c of traffic.cars) {
       if (Math.abs(c.s - veh.s) > 14 || Math.abs(c.x - veh.x) > 5) continue;
       const hit = sat(veh, c); if (!hit) continue;
+      const pre = { v: veh.speed, closing: Math.hypot(veh.vs - c.vs, veh.vx - (c.vx || 0)) };   // before the impulse changes them
       const j = resolve(veh, c, hit, 0.12, 0.35);
-      if (j > 0) carHit(c, j, hit);
+      if (j > 0) carHit(c, j, hit, pre);
     }
     for (const o of world.obstacles) {
       if (Math.abs(o.s - veh.s) > 14 || Math.abs(o.x - veh.x) > 10) continue;
@@ -240,14 +242,15 @@ function physics(dt, driving) {
   }
   veh.events.length = 0;
 }
-function hurt(dv, what) {
+function hurt(dv, what, cap = 100) {
   if (run.wreckT > 0 && what !== 'car') return;
-  veh.damage = Math.min(100, veh.damage + dv * dv * 0.3 + dv * 1.2);
+  veh.damage = Math.min(Math.max(veh.damage, cap), veh.damage + dv * dv * 0.3 + dv * 1.2);
   if (veh.damage >= 100 && !veh.wrecked) { veh.wrecked = true; endRun('TOTALSCHADEN'); audio.crash(1); audio.glass(); shake = 0.5; toast('TOTALSCHADEN', '', 'bad'); fx.puff(veh.x, 0.9, veh.s, 0, veh.vs, 8, true, 1.8); }
 }
-function carHit(c, j, hit) {
+function carHit(c, j, hit, pre) {
   const dv = j / veh.m, dvc = j / c.m;
-  hurt(dv, 'car'); traffic.knock(c, dvc);
+  // below 150 km/h, or when both cars were going about the same speed, a car-to-car hit dents and smokes but never writes the car off
+  hurt(dv, 'car', pre.v * KMH < 150 || pre.closing * KMH < 40 ? 88 : 100); traffic.knock(c, dvc);
   const strength = clamp(Math.max(dv, dvc) / 12, 0.15, 1);
   if (performance.now() - run.lastHit > 180) { audio.crash(strength); if (strength > 0.4) audio.glass(); run.lastHit = performance.now(); haptic(Math.round(25 + strength * 90)); }
   fx.debris(hit.p[0], 0.55, hit.p[1], (veh.vx + c.vx) / 2, (veh.vs + c.vs) / 2, 2 + (strength * 10 | 0), c.mesh.userData.paint ? c.mesh.userData.paint.color.getHex() : PAINT());
@@ -563,9 +566,9 @@ if (nativeApp) {
     else if (mode === 'menu' && !document.querySelector('#s-main.hidden')) nativeApp.minimizeApp();
     else go('main');
   });
-  nativeApp.addListener('appStateChange', ({ isActive }) => { if (!isActive && mode === 'play') go('pause'); });
+  nativeApp.addListener('appStateChange', ({ isActive }) => { if (!isActive && mode === 'play') go('pause'); audio.setHidden(!isActive); });
 }
 sky.setWeather(settings.weather === 'dynamic' ? 'clear' : settings.weather, true);
 window.__game = { simulate, input, keys, player: veh, veh, run, sky, world, traffic, police, audio, settings, cockpit, fx, go, setCar,
-  get mode() { return mode; }, set cam(v) { camMode = v; }, get cam() { return camMode; }, set orbit(v) { orbit = v; } };
+  get mode() { return mode; }, get carMesh() { return carMesh; }, set cam(v) { camMode = v; }, get cam() { return camMode; }, set orbit(v) { orbit = v; } };
 frame();
