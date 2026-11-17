@@ -81,4 +81,32 @@ export const CARS = [
       pillars: [], grille: 'horseshoe', head: 'quad', tail: 'bar', wing: 'wing', exhaust: 'center2', flare: 0.04, midEngine: true, cLine: true,
     },
   },
+  {
+    id: 'r6', name: 'WOLFSBURG R-SECHS', sub: 'Stage 3 · modded hot hatch',
+    engine: '3.6 L VR6 big turbo', ps: 580, mass: 1520, vmax: 300, zeroTo100: 3.2,
+    handling: 1.08, awd: true, gears: 7, redline: 7400, idle: 900,
+    colors: [0x1d4fa8, 0xf0f0ee, 0x6d7177, 0x0d0d0f, 0xc8102e, 0x7fd0c8],
+    blackWheels: true,
+    sound: { cyl: 6, f1: 165, f2: 620, bright: 0.9, decay: 105, rasp: 0.6, turbo: 0.95, pops: 1.0, uneven: 0.18, gain: 1.25 },
+    body: {
+      L: 4.29, W: 1.84, H: 1.40, c: 0.115, wheelR: 0.345, wb: 2.63, fo: 0.86,
+      hoodH: 0.83, noseH: 0.53, cowlH: 0.96, cowlX: 0.82, roofF: 0.22, roofR: -1.42,
+      baseR: -1.98, beltR: 0.99, deckH: 0.97, tailH: 0.95,
+      pillars: [-0.28], grille: 'vw', head: 'slim', tail: 'bar', wing: 'roof', exhaust: 'quad', flare: 0.075,
+    },
+  },
+  {
+    id: 'm5b', name: 'SCHATTEN M-FÜNF', sub: 'Blacked out · straight pipes',
+    engine: '4.4 L V8 biturbo, no silencers', ps: 760, mass: 1940, vmax: 320, zeroTo100: 3.1,
+    handling: 0.98, awd: true, gears: 8, redline: 7200, idle: 700,
+    colors: [0x0a0a0b, 0x161618, 0x22252a, 0x0c111c, 0x2c2f33, 0x101010],
+    matte: [false, true, true, false, true, false], blackWheels: true, blackout: true,
+    sound: { cyl: 8, f1: 92, f2: 340, bright: 0.85, decay: 58, rasp: 0.85, turbo: 0.45, pops: 1.0, uneven: 0.6, gain: 1.5 },
+    body: {
+      L: 5.0, W: 1.93, H: 1.44, c: 0.13, wheelR: 0.36, wb: 2.98, fo: 0.9,
+      hoodH: 0.82, noseH: 0.53, cowlH: 0.96, cowlX: 0.82, roofF: 0.1, roofR: -1.15,
+      baseR: -1.85, beltR: 0.98, deckH: 0.96, tailH: 0.92,
+      pillars: [-0.4], grille: 'kidney', head: 'slim', tail: 'L', wing: 'lip', exhaust: 'quad', flare: 0.05,
+    },
+  },
 ];

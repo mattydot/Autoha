@@ -89,6 +89,7 @@ export class GameAudio {
   }
   whoosh(pan, strength) { this._burst({ dur: 0.38, type: 'bandpass', f0: 1500 + strength * 900, f1: 260, q: 0.9, gain: 0.22 + 0.4 * strength, pan, attack: 0.07 }); }
   crash(strength) { this._burst({ dur: 0.9, f0: 3200, f1: 120, gain: 0.5 + strength * 0.5 }); this._tone(110, 0.45, 'sine', 0.7, 32); this._burst({ dur: 0.5, type: 'highpass', f0: 4000, f1: 6000, gain: 0.3 * strength, delay: 0.06 }); }
+  pop(loud) { this._burst({ dur: 0.07, type: 'bandpass', f0: 900, f1: 300, q: 0.8, gain: 0.35 * loud, pan: (Math.random() - 0.5) * 0.4, attack: 0.002 }); this._tone(60 + Math.random() * 40, 0.06, 'sine', 0.25 * loud, 30); }
   impact(strength) { this._burst({ dur: 0.35 + strength * 0.4, f0: 1800, f1: 90, gain: 0.3 + strength * 0.5 }); this._tone(70 + Math.random() * 30, 0.3, 'sine', 0.4 * strength, 30);
     this._burst({ dur: 0.25, type: 'bandpass', f0: 3800, f1: 2500, q: 3, gain: 0.15 * strength, delay: 0.02 }); }
   glass() { for (let i = 0; i < 6; i++) this._burst({ dur: 0.12, type: 'highpass', f0: 5000 + Math.random() * 3000, f1: 7000, gain: 0.08, delay: i * 0.025 + Math.random() * 0.02, pan: Math.random() - 0.5 }); }

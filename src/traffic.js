@@ -10,14 +10,14 @@ import { sat, resolve } from './physics.js';
 const KMH = 1 / 3.6;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = THREE.MathUtils.clamp;
-const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, police: 2075 };
+const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, r6: 1520, m5b: 1940, police: 2075 };
 
 export class Traffic {
   constructor(world) {
     this.world = world; this.factory = new TrafficFactory(); world.factory = this.factory;
     this.cars = []; this.oncoming = []; this.pool = {}; this.density = 1; this.police = null;
     this.spawnT = 0;
-    for (const k of [...TRAFFIC_KINDS, 'truck', 'm3', 'rs6', 'maybach', 'v10', 'police']) this.factory._template(k);
+    for (const k of [...TRAFFIC_KINDS, 'truck', 'm3', 'rs6', 'maybach', 'v10', 'r6', 'm5b', 'police']) this.factory._template(k);
   }
   _get(kind) {
     const p = this.pool[kind] || (this.pool[kind] = []);
@@ -30,7 +30,7 @@ export class Traffic {
   _kindFor(lane) {
     const r = Math.random();
     if (lane === 2) return r < 0.5 ? 'truck' : r < 0.62 ? 'van' : TRAFFIC_KINDS[(Math.random() * 4) | 0];
-    if (lane === 0 && r < 0.3) return ['m3', 'rs6', 'maybach', 'v10'][(Math.random() * 4) | 0];
+    if (lane === 0 && r < 0.34) return ['m3', 'rs6', 'maybach', 'v10', 'r6', 'm5b'][(Math.random() * 6) | 0];
     return r < 0.08 ? 'van' : TRAFFIC_KINDS[(Math.random() * 4) | 0];
   }
   _speedFor(kind, lane) {
@@ -142,7 +142,7 @@ export class Traffic {
       c.vx = (c.x - x0) / Math.max(dt, 1e-4); c.psi = Math.atan2(c.vx, Math.max(c.vs, 5)); c.r = 0;
       this._visual(c, dt, night, blink, sky);
     }
-    MATS.head.emissiveIntensity = 0.5 + night * 5 + (sky.cur.rain + sky.cur.fog * 60) * 1.5;
+    MATS.head.emissiveIntensity = 0.9 + night * 5 + (sky.cur.rain + sky.cur.fog * 60) * 1.5;
 
     // wrecks and police can run into other cars
     for (let i = 0; i < this.cars.length; i++) for (let j = i + 1; j < this.cars.length; j++) {

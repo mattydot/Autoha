@@ -201,3 +201,31 @@ body.touch button, body.touch .btn, body.touch select { min-height: 44px; }
   .swatches button { width: 30px; height: 30px; min-height: 0; }
   #s-garage .panel { gap: 7px; }
 }
+
+/* ================= portrait ================= */
+@media (orientation: portrait) {
+  .screen { justify-content: flex-end; gap: 14px; padding: calc(16px + var(--st)) calc(14px + var(--sr)) calc(16px + var(--sb)) calc(14px + var(--sl));
+    background: linear-gradient(0deg, rgba(4, 6, 9, 0.92) 0%, rgba(4, 6, 9, 0.6) 45%, rgba(4, 6, 9, 0) 70%); }
+  #s-main { justify-content: space-between; }
+  .brand { text-align: center; } .brand h1 { font-size: clamp(40px, 13vw, 68px); } .brand h1 span { letter-spacing: 0.22em; }
+  .menu { width: 100%; } .menu button { font-size: 20px; padding: 13px 18px; }
+  .panel.side, .panel.side.wide, .panel.side.xwide { width: 100%; max-height: 62vh; margin: 0; }
+  .screen.center { justify-content: center; } .screen.center .panel { width: 100%; min-width: 0; }
+  .menu.small { width: 100%; }
+  .music-grid { grid-template-columns: 1fr; } .music-grid .tracks { max-height: 26vh; }
+  .stations button small { display: none; } .stations { grid-template-columns: 1fr 1fr; }
+  .specs.four { grid-template-columns: repeat(2, 1fr); }
+  .form label { grid-template-columns: 110px 1fr; }
+  .drag-hint { display: none; }
+  /* HUD */
+  body.touch #hud .hud-br { bottom: calc(32vw + 18px + var(--sb)); }
+  body.touch .hud-tr { right: calc(64px + var(--sr)); }
+  #toasts { top: 26%; } .toast { font-size: 15px; white-space: normal; text-align: center; max-width: 80vw; }
+  .radio-pop { max-width: 92vw; font-size: 12px; } .police { top: 54px; font-size: 11px; }
+  /* touch controls sized to the width */
+  #touch .steer button { width: 26vw; height: 26vw; max-width: 120px; max-height: 120px; border-radius: 20px; }
+  #touch .brake, #touch.autogas .brake { width: 30vw; height: 26vw; max-width: 140px; max-height: 120px; }
+  #touch .gas { width: 22vw; height: 34vw; }
+  #touch .actions { top: 40%; }
+}
+@media (orientation: portrait) { #s-garage, #s-music, #s-settings { justify-content: flex-end; } #s-garage .panel.side { max-height: 56vh; } }

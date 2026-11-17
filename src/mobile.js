@@ -49,10 +49,9 @@ export async function requestMotion() {
 }
 
 let wake = null;
-/** fullscreen, landscape, screen kept on (all best effort: browsers decide) */
+/** fullscreen and screen kept on (best effort: browsers decide). Both orientations are allowed. */
 export async function enterGameMode() {
   try { if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch {}
-  try { await screen.orientation.lock('landscape'); } catch {}
   try { if ('wakeLock' in navigator && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch {}
 }
 export function releaseWake() { try { wake?.release(); } catch {} wake = null; }

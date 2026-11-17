@@ -5,6 +5,7 @@
 // there is no lane. Box the player in and bring them to a stop and it is
 // over. Outrun them, or keep away until they give up, and you are free.
 import { LANES } from './world.js';
+import { POLICE_SIGN } from './cars.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -47,6 +48,7 @@ export class Police {
   /** per frame. Returns 'busted' | 'escaped' | 'gaveup' | null */
   update(dt, player, traffic) {
     this.cars = this.cars.filter((c) => traffic.cars.includes(c));
+    POLICE_SIGN.draw(!this.active ? 'POLIZEI' : ((performance.now() / 1200) | 0) % 2 ? 'BITTE FOLGEN' : 'POLIZEI');
     if (!this.active) return null;
     this.t += dt;
     while (this.queue.length && this.queue[0].at <= this.t) this._spawn(this.queue.shift(), player, traffic);

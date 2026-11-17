@@ -1,89 +1,101 @@
-# Publishing Autobahn Rush on Google Play
+# Android app and Google Play
 
-The game is a web app (plain HTML/JS, no build step) that is already set up to
-behave like a phone app: landscape only, fullscreen, touch controls, tilt
-steering, vibration, and offline play through a service worker
-(`manifest.webmanifest`, `sw.js`, `icons/`). Google Play needs it wrapped in an
-Android app bundle (`.aab`). There are two good ways to do that.
+The repository contains a ready Android project (`android/`, made with
+[Capacitor](https://capacitorjs.com)). The game files are packed inside the
+app, so it plays fully offline and nothing has to be hosted.
 
-## Option A: Capacitor (recommended, works fully offline)
+What the app does on top of the web version:
 
-The game files are packed inside the app, so nothing needs to be hosted.
+- Runs in portrait and landscape (follows the phone's auto-rotate setting).
+- Fullscreen with the system bars hidden; swipe from the edge to show them.
+- Keeps the screen on while the app is open, vibration on crashes.
+- The Android back button pauses the game, closes the open menu, or leaves the
+  app from the main menu. Switching away from the app pauses the game.
+- Launcher icon (adaptive, round and legacy shapes) and a dark splash screen.
 
-1. Install Node.js and Android Studio (with an Android SDK).
-2. In the repository folder:
+## Download the APK
+
+Every push to `main` builds the app in GitHub Actions
+(`.github/workflows/android.yml`). Pushing a tag like `v1.0.1` also publishes a
+**GitHub Release** with `AutobahnRush.apk` attached:
+
+1. Open the repository's **Releases** page and download `AutobahnRush.apk` on the phone.
+2. Allow your browser or file manager to install unknown apps when Android asks.
+3. Open the APK and install.
+
+Builds from untagged pushes are under **Actions → Android build → Artifacts**.
+
+Without signing secrets (below) the APK is debug-signed with a key that changes
+with every build, so to update you may have to uninstall the old version first.
+
+## Build it yourself
+
+You need Node.js 22, JDK 21 and the Android SDK (Android Studio installs it).
 
 ```bash
-npm init -y
+npm ci
 ```
 
 ```bash
-npm install @capacitor/core @capacitor/cli @capacitor/android
+npm run sync
 ```
 
 ```bash
-npx cap init "Autobahn Rush" com.yourname.autobahnrush --web-dir .
+cd android && ./gradlew assembleDebug
 ```
 
-3. Capacitor copies everything in `--web-dir` into the app. Keep the bundle
-   small by setting `webDir` to a folder that holds only the game: copy
-   `index.html`, `manifest.webmanifest`, `sw.js`, `css/`, `src/`, `vendor/`
-   and `icons/` into a folder called `www/` and use `--web-dir www` instead.
-4. Add Android and open it:
+The APK lands in `android/app/build/outputs/apk/debug/`. `npm run sync` copies
+the game into `www/` and from there into the Android project; run it again
+after changing the game. `npx cap open android` opens the project in Android
+Studio.
+
+## Publishing on Google Play
+
+1. **Create an upload key** once and keep it safe; every update must be signed
+   with it:
 
 ```bash
-npx cap add android
+keytool -genkeypair -v -keystore upload.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-```bash
-npx cap open android
-```
+2. **Add it to GitHub** as repository secrets (Settings → Secrets and variables →
+   Actions). Never commit the keystore.
 
-5. In Android Studio: set the app icon (Image Asset, use `icons/icon-512.png`),
-   in `AndroidManifest.xml` set `android:screenOrientation="sensorLandscape"` on
-   the activity, then Build > Generate Signed App Bundle. Keep the signing key
-   safe: you need the same key for every update.
-6. After changing the game, copy the files into `www/` again and run
-   `npx cap sync`.
+   | Secret | Value |
+   | --- | --- |
+   | `ANDROID_KEYSTORE_BASE64` | output of `base64 -w0 upload.keystore` |
+   | `ANDROID_KEYSTORE_PASSWORD` | the keystore password |
+   | `ANDROID_KEY_ALIAS` | `upload` |
+   | `ANDROID_KEY_PASSWORD` | the key password |
 
-## Option B: Trusted Web Activity (Bubblewrap)
-
-The app opens the hosted website full screen. Updates go live by pushing to
-the website, without a new Play release.
-
-1. Host the game on HTTPS, for example GitHub Pages
-   (repository Settings > Pages > deploy from `main`).
-2. Install Bubblewrap and create the project from the hosted manifest:
+   With these set, the workflow builds a signed release APK and an
+   `AutobahnRush.aab` app bundle (the format Google Play wants).
+3. **Tag a release**: the version name comes from the tag, the version code
+   rises with every build.
 
 ```bash
-npm install -g @bubblewrap/cli
-```
-
-```bash
-bubblewrap init --manifest https://YOUR-SITE/manifest.webmanifest
+git tag v1.0.1
 ```
 
 ```bash
-bubblewrap build
+git push origin v1.0.1
 ```
 
-3. Bubblewrap prints a Digital Asset Links snippet. Publish it at
-   `https://YOUR-SITE/.well-known/assetlinks.json`, otherwise the app shows a
-   browser address bar.
+4. **Play Console** (one-time USD 25 developer account): create the app, turn on
+   Play App Signing, and upload the `.aab` from the release to internal testing
+   first, then production.
+5. **Store listing**: graphics are in `docs/play/` (512 × 512 icon and a
+   1024 × 500 feature graphic). Add phone screenshots from the game. The privacy
+   policy is [`PRIVACY.md`](../PRIVACY.md): the game collects nothing and needs
+   no account. Content rating: the IARC questionnaire (no violence against
+   people, no gambling, no user content); category Racing.
+6. Target API level is 36, which meets Google Play's current requirement.
 
-## Play Console checklist
+## Changing the icon
 
-- Google Play developer account (one-time fee).
-- New personal developer accounts must run a closed test with at least 12
-  testers for 14 days before going to production.
-- Store listing: icon 512x512 (`icons/icon-512.png`), feature graphic
-  1024x500, at least two landscape screenshots.
-- Content rating questionnaire (driving, crashes, no blood).
-- Privacy policy URL: see `PRIVACY.md` (host it somewhere public).
-- Data safety form: the game collects no data. Settings, best score and the
-  music files you add stay on the device.
+`scripts/make_icons.py` draws the launcher icons, splash screens, PWA icons and
+Play graphics (Python with Pillow):
 
-## When you change the game
-
-Bump `VERSION` in `sw.js` so phones fetch the new files, and add any new file
-to its `FILES` list.
+```bash
+python3 scripts/make_icons.py
+```

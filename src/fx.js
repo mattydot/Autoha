@@ -88,6 +88,12 @@ export class Fx {
     for (let k = 0; k < n; k++) this.sparks.emit({ x, y, s, vx: vx * 0.8 + (Math.random() - 0.5) * 5, vy: 0.5 + Math.random() * 3, vs: vs * 0.8 + (Math.random() - 0.5) * 5, size: 0.06 + Math.random() * 0.06, life: 0.25 + Math.random() * 0.4, a: 1, r: 1, g: 0.55 + Math.random() * 0.3, b: 0.15 });
   }
 
+  // exhaust flame on overrun: a short orange burst with a blue core
+  flame(x, y, s, vx, vs) {
+    for (let k = 0; k < 6; k++) { const hot = k < 2; this.sparks.emit({ x: x + vx * 0.01, y, s, vx: vx * 0.9 + (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.3) * 1.2, vs: vs - 4 - Math.random() * 6,
+      size: hot ? 0.16 : 0.22 + Math.random() * 0.2, life: 0.06 + Math.random() * 0.1, a: 1, r: hot ? 0.5 : 1, g: hot ? 0.6 : 0.45 + Math.random() * 0.25, b: hot ? 1 : 0.08 }); }
+  }
+
   update(dt) {
     let any = false;
     for (let i = 0; i < this.nDeb; i++) {

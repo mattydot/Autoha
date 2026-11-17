@@ -17,6 +17,8 @@ const STYLE = {
   maybach: { dash: 0x3a2a1c, trim: 0xcdbfa4, seat: 0xd9cdb4, stitch: '#8a6a44', accent: '#d9e4ff', ambient: 0xffe0b0, wheel: 0x2c1e14, wood: true, cluster: 'classic' },
   v10:     { dash: 0x151517, trim: 0x1c1c1f, seat: 0x18181a, stitch: '#8fe82a', accent: '#9bff2e', ambient: 0x7bff2a, wheel: 0x121214, carbon: true, flat: true, cluster: 'hex' },
   v12:     { dash: 0x151517, trim: 0x1c1c1f, seat: 0x18181a, stitch: '#ffb000', accent: '#ffb000', ambient: 0xffa000, wheel: 0x121214, carbon: true, flat: true, cluster: 'hex' },
+  r6:      { dash: 0x17181b, trim: 0x26282c, seat: 0x1d1f23, stitch: '#2a64d6', accent: '#2a8cff', ambient: 0x2a6cff, wheel: 0x151517, cluster: 'virtual' },
+  m5b:     { dash: 0x0e0e10, trim: 0x18181b, seat: 0x121214, stitch: '#c4121a', accent: '#ff2a2a', ambient: 0xff1a1a, wheel: 0x0f0f11, carbon: true, cluster: 'm' },
   w16:     { dash: 0x101827, trim: 0x23304a, seat: 0x1c2a48, stitch: '#9fc4ff', accent: '#4fa3ff', ambient: 0x3a8cff, wheel: 0x101828, alu: true, cluster: 'classic' },
 };
 

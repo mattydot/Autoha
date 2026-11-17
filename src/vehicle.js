@@ -177,22 +177,46 @@ export class Vehicle {
     // rollover: a car sliding sideways can dig its tyres in and trip.
     // The more grip, the more likely; on ice it just slides.
     const wa = Math.abs(this.w);
-    if (env.canRoll && wa > 10 && this.sideways > 0.5) {
-      const p = clamp((wa - 10) / 14, 0, 1) * Math.pow(clamp(this.mu, 0.2, 1), 2) * 0.55;
+    if (env.canRoll && wa > 13 && this.sideways > 0.6) {
+      const p = clamp((wa - 13) / 14, 0, 1) * Math.pow(clamp(this.mu, 0.2, 1), 3) * 0.16;
       if (Math.random() < p * h) this.startRoll(sgn(this.w), wa);
     }
   }
 
   startRoll(dir, wa) {
     if (this.rolling) return;
-    this.rolling = true; this.wrecked = true; this.rolls = 0;
-    this.omega = dir * clamp(wa * 0.8, 5, 15); this.vy = 1.6 + wa * 0.17;
-    this.events.push({ type: 'roll', strength: clamp(wa / 20, 0.3, 1) });
+    this.rolling = true; this.rolls = 0; this.rollDir = dir;
+    if (wa < 17) {
+      // slower slides: the trailing wheels lift and the car leans up onto two wheels first;
+      // it only goes over if the slide carries it past the tipping point
+      this.tipping = true; this.omega = dir * (0.6 + wa * 0.05); this.vy = 0;
+      this.events.push({ type: 'tip', strength: clamp(wa / 20, 0.2, 0.8) });
+    } else {
+      this.tipping = false; this.wrecked = true;
+      this.omega = dir * clamp(wa * 0.8, 5, 15); this.vy = 1.6 + wa * 0.17;
+      this.events.push({ type: 'roll', strength: clamp(wa / 20, 0.3, 1) });
+    }
   }
 
   // after a trip: the body tumbles about its long axis while sliding to a stop
   _tumble(h) {
     const half = Math.PI / 2, ycMin = (p) => (this.W / 2) * Math.abs(Math.sin(p)) + (this.H / 2) * Math.abs(Math.cos(p));
+    if (this.tipping) {
+      // up on two wheels: the sideways slide keeps pushing it over, gravity pulls it back
+      const sp = this.speed, wa = Math.abs(this.w), tipA = Math.atan2(this.W, this.H), a = Math.abs(this.phi);
+      if (sp > 0.01) { const d = Math.min(sp, 0.55 * G * h); this.vx -= this.vx / sp * d; this.vs -= this.vs / sp * d; }
+      this.r *= Math.exp(-h * 1.2); this.psi += this.r * h; this.x += this.vx * h; this.s += this.vs * h;
+      const push = clamp((wa - 6) / 6, 0, 1.8) * 3.4, fall = 4.1 * Math.sin(tipA - a);
+      this.omega += this.rollDir * (push - fall) * h; this.phi += this.omega * h; this.yc = ycMin(this.phi);
+      if (Math.abs(this.phi) > tipA) {                         // past the balance point: it goes over
+        this.tipping = false; this.wrecked = true; this.omega = this.rollDir * Math.max(Math.abs(this.omega), 2.5) * 1.3;
+        this.events.push({ type: 'roll', strength: 0.5 });
+      } else if (this.phi * this.rollDir <= 0) {               // drops back onto its wheels
+        this.rolling = false; this.tipping = false; this.phi = 0; this.omega = 0; this.yc = this.H / 2; this.vy = 0;
+        this.events.push({ type: 'land', strength: clamp(a, 0.2, 0.8) });
+      }
+      this.skid = 0.6; this.rpm += (this.spec.idle - this.rpm) * h; return;
+    }
     const ground = this.yc <= ycMin(this.phi) + 0.04, sp = this.speed;
     if (ground && sp > 0.01) { const d = Math.min(sp, 0.6 * G * h); this.vx -= this.vx / sp * d; this.vs -= this.vs / sp * d; }
     this.r *= Math.exp(-h * (ground ? 1.6 : 0.3)); this.psi += this.r * h;

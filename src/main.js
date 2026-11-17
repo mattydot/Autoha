@@ -125,7 +125,8 @@ setTouchMode(isTouch);
 addEventListener('touchstart', () => { if (!touchMode) setTouchMode(true); }, { passive: true });
 document.addEventListener('contextmenu', (e) => { if (touchMode) e.preventDefault(); });
 // landscape only on phones
-function checkOrientation() { $('rotate').classList.toggle('hidden', !(touchMode && innerHeight > innerWidth * 1.05)); }
+// both orientations are supported; the body class lets the layout adapt
+function checkOrientation() { document.body.classList.toggle('portrait', innerHeight > innerWidth); }
 addEventListener('resize', checkOrientation); addEventListener('orientationchange', () => setTimeout(checkOrientation, 200));
 
 function readInput(dt) {
@@ -214,7 +215,7 @@ function physics(dt, driving) {
       veh.scrape = Math.min(1, veh.speed / 25);
       if (Math.random() < 0.5) fx.spark(hw.p[0], 0.35, hw.p[1], veh.vx, veh.vs, 2);
       if (dv > 4) { audio.crash(clamp(dv / 15, 0.2, 1)); haptic(Math.round(20 + dv * 6)); fx.debris(hw.p[0], 0.5, hw.p[1], veh.vx, veh.vs, 4, PAINT()); shake = Math.max(shake, clamp(dv / 25, 0.1, 0.5)); }
-      if (dv > 3 && veh.sideways > 0.45 && Math.abs(veh.w) > 9 && Math.random() < 0.35) veh.startRoll(Math.sign(hw.n[0]), Math.abs(veh.w));
+      if (dv > 4 && veh.sideways > 0.55 && Math.abs(veh.w) > 11 && Math.random() < 0.22) veh.startRoll(Math.sign(hw.n[0]), Math.abs(veh.w));
     }
     // traffic
     for (const c of traffic.cars) {
@@ -232,6 +233,8 @@ function physics(dt, driving) {
   }
   // rollover events
   for (const e of veh.events) {
+    if (e.type === 'tip') { audio.crash(0.3); shake = Math.max(shake, 0.25); haptic(60); }
+    if (e.type === 'land') { audio.impact(e.strength); hurt(2.5 + e.strength * 3, 'land'); shake = Math.max(shake, 0.35); haptic(80); toast('GLÜCK GEHABT', 'Back on four wheels', 'good'); }
     if (e.type === 'roll') { endRun('ÜBERSCHLAG'); toast('ÜBERSCHLAG!', '', 'bad'); audio.crash(1); audio.glass(); shake = 0.6; }
     if (e.type === 'impact') { audio.impact(e.strength); haptic(Math.round(30 + e.strength * 80)); fx.debris(veh.x, 0.4, veh.s, veh.vx, veh.vs, 3 + (e.strength * 8 | 0), PAINT()); fx.puff(veh.x, 0.3, veh.s, veh.vx, veh.vs, 3, false, 2); shake = Math.max(shake, e.strength * 0.5); if (e.strength > 0.5) audio.glass(); }
   }
@@ -253,7 +256,7 @@ function carHit(c, j, hit) {
   // touching another car and driving on is a crime
   if (c.police) { if (police.active) { police.trigger('WIDERSTAND', 40, 4); } }
   else if (!c.touched) { c.touched = true; if (police.trigger('UNFALLFLUCHT', 45, 3)) { toast('UNFALLFLUCHT', 'Polizei alarmiert', 'bad'); haptic([40, 40, 40]); } }
-  if (Math.abs(hit.n[0]) > 0.7 && veh.sideways > 0.45 && Math.abs(veh.w) > 10 && Math.random() < 0.25) veh.startRoll(Math.sign(-hit.n[0]) || 1, Math.abs(veh.w));
+  if (Math.abs(hit.n[0]) > 0.7 && veh.sideways > 0.55 && Math.abs(veh.w) > 12 && Math.random() < 0.12) veh.startRoll(Math.sign(-hit.n[0]) || 1, Math.abs(veh.w));
 }
 function recover() {
   if (veh.rolling || veh.wrecked || veh.speed > 6 || (Math.abs(veh.psi) < 0.5 && veh.speed > 1)) return;
@@ -327,10 +330,20 @@ function updateCar(dt) {
   wheelsAt(-veh.b).forEach(([x, s], i) => { fx.skid('r' + i, x, s, k); if (k > 0.45 && Math.random() < k * 0.5) fx.puff(x, 0.25, s, veh.vx, veh.vs, 1, false, 1.2); });
   const kf = input.brake > 0.5 && veh.mu < 0.5 ? k : veh.sliding ? k * 0.8 : 0;
   wheelsAt(veh.a).forEach(([x, s], i) => fx.skid('f' + i, x, s, kf));
+  // loud cars spit flames and crackle when you lift off at high revs
+  const snd = veh.spec.sound;
+  if (mode === 'play' && !veh.wrecked && snd.pops >= 0.9 && input.throttle < 0.05 && veh.rpm > veh.spec.redline * 0.5 && Math.random() < dt * 9 * snd.pops) {
+    const n = veh.spec.body.exhaust === 'quad' ? [-0.55, 0.55] : [-0.12, 0.12], side = n[(Math.random() * n.length) | 0];
+    carMesh.localToWorld(_v.set(side, veh.spec.body.c + 0.1, veh.L / 2 + 0.08)); fx.flame(_v.x, _v.y, -_v.z + world.s, veh.vx, veh.vs); audio.pop(snd.gain);
+  }
   if (veh.wrecked && Math.random() < dt * 6) { carMesh.localToWorld(_v.set(0, 0.9, -veh.L / 2 + 0.6)); fx.puff(_v.x, _v.y, -_v.z + world.s, 0, 0, 1, true, 1.6); }
 }
 
+// a landscape field of view, converted so a tall portrait screen still shows a sensible width of road
+const D2R = Math.PI / 180;
+function viewFov(v) { const a = camera.aspect; if (a >= 1) return v; const h = 2 * Math.atan(Math.tan(v * D2R / 2) * 1.78) * 0.62; return Math.min(96, 2 * Math.atan(Math.tan(h / 2) / a) / D2R); }
 function updateCamera(dt, t) {
+  const portrait = camera.aspect < 1;
   const vn = clamp(veh.speed / 110, 0, 1.2), sh = settings.shake === '1' ? 1 : 0, pz = rig.position.z;
   shake = Math.max(0, shake - dt * 1.4);
   const inCar = camMode === 2 && (mode === 'play' || mode === 'paused') && !veh.rolling;
@@ -350,16 +363,16 @@ function updateCamera(dt, t) {
       _v.copy(cockpit.eye).add(view.head); _v.y += Math.sin(t * 31) * 0.0012 * vn + (Math.random() - 0.5) * 0.004 * vn * vn;
       carMesh.localToWorld(camera.position.copy(_v));
       carMesh.getWorldQuaternion(_q); camera.quaternion.copy(_q).multiply(new THREE.Quaternion().setFromEuler(_e.set(-0.045, -input.steer * 0.06, view.headRoll, 'YXZ')));
-      const fov = 70 + 8 * vn; camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
+      const fov = viewFov(70 + 8 * vn); camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
       if (shake > 0 && sh) camera.position.addScaledVector(_t.set(Math.random() - 0.5, Math.random() - 0.5, 0), shake * 0.15);
       camera.updateProjectionMatrix(); if (window.__debugCam) window.__debugCam(camera, rig); return;
     }
-    const back = camMode === 0 ? 6.3 - vn * 0.5 : 10.5, up = camMode === 0 ? 2.0 + vn * 0.15 : 3.6;
+    const back = (camMode === 0 ? 6.3 - vn * 0.5 : 10.5) + (portrait ? 1.6 : 0), up = (camMode === 0 ? 2.0 + vn * 0.15 : 3.6) + (portrait ? 0.7 : 0);
     const cx = (veh.rolling ? veh.x : camX * 0.9 + veh.x * 0.1);
     camera.position.set(cx - syw * back * 0.9, up, pz + cy * back);
     _t.set(veh.x + syw * 14, camMode === 0 ? 1.05 : 0.8, pz - cy * (camMode === 0 ? 16 : 20));
     if (veh.rolling) _t.set(veh.x, veh.yc, pz);
-    const fov = 58 + 30 * vn * vn / (0.4 + vn);
+    const fov = viewFov(58 + 30 * vn * vn / (0.4 + vn));
     const k = (shake + vn * vn * 0.02) * sh;
     camera.position.x += (Math.random() - 0.5) * k; camera.position.y += (Math.random() - 0.5) * k * 0.7;
     camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
@@ -368,8 +381,9 @@ function updateCamera(dt, t) {
     const garage = mode === 'garage', a = garage ? orbit : 0.75 + Math.sin(t * 0.07) * 0.55, r = garage ? 6.6 : 7.4;
     camera.position.set(veh.x + Math.sin(a) * r, garage ? 1.45 : 1.6 + Math.sin(t * 0.05) * 0.3, pz - Math.cos(a) * r);
     _t.set(veh.x, 0.75, pz);
-    if (innerWidth > 720) { _v.subVectors(_t, camera.position).normalize(); _v.set(_v.z, 0, -_v.x); _t.addScaledVector(_v, 1.9); }
-    camera.fov += (38 - camera.fov) * Math.min(1, dt * 4);
+    if (innerWidth > 720 && !portrait) { _v.subVectors(_t, camera.position).normalize(); _v.set(_v.z, 0, -_v.x); _t.addScaledVector(_v, 1.9); }
+    if (portrait) _t.y -= 1.0;                     // car in the top half, menus below
+    camera.fov += (viewFov(38) - camera.fov) * Math.min(1, dt * 4);
   }
   camera.lookAt(_t); camera.updateProjectionMatrix();
   if (window.__debugCam) window.__debugCam(camera, rig);
@@ -539,7 +553,18 @@ function render() {
 
 setupQuality(); applyWorldSettings(); applyControls(); checkOrientation(); setCar(settings.car); updateMainUI(); updateMusicUI();
 // offline play and installing as an app (needs http(s), not file://)
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+const nativeApp = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.App : null;
+if (!nativeApp && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+// Android app: the system back button pauses, closes the open panel, or leaves the app from the main menu
+if (nativeApp) {
+  nativeApp.addListener('backButton', () => {
+    if (mode === 'play') go('pause');
+    else if (mode === 'paused') go(document.querySelector('#s-pause.hidden') ? 'back' : 'resume');
+    else if (mode === 'menu' && !document.querySelector('#s-main.hidden')) nativeApp.minimizeApp();
+    else go('main');
+  });
+  nativeApp.addListener('appStateChange', ({ isActive }) => { if (!isActive && mode === 'play') go('pause'); });
+}
 sky.setWeather(settings.weather === 'dynamic' ? 'clear' : settings.weather, true);
 window.__game = { simulate, input, keys, player: veh, veh, run, sky, world, traffic, police, audio, settings, cockpit, fx, go, setCar,
   get mode() { return mode; }, set cam(v) { camMode = v; }, get cam() { return camMode; }, set orbit(v) { orbit = v; } };

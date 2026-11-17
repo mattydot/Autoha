@@ -1,0 +1,7 @@
+{
+  "appId": "com.autobahnrush.game",
+  "appName": "Autobahn Rush",
+  "webDir": "www",
+  "backgroundColor": "#0b0d10",
+  "android": { "allowMixedContent": false, "captureInput": true, "webContentsDebuggingEnabled": false }
+}
