@@ -5,17 +5,22 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CARS, buildPlayerCar, setCarColor, MATS } from './cars.js';
-import { World, LANES, ROAD } from './world.js';
+import { World, LANES } from './world.js';
 import { Sky, WEATHERS } from './sky.js';
 import { Traffic } from './traffic.js';
+import { Police } from './police.js';
 import { GameAudio } from './audio.js';
 import { STATIONS } from './radio.js';
+import { Vehicle } from './vehicle.js';
+import { sat, resolve, walls } from './physics.js';
+import { Cockpit } from './cockpit.js';
+import { Fx } from './fx.js';
 
 const $ = (id) => document.getElementById(id);
 const KMH = 3.6, clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp;
 
 /* ------------------------------ settings ------------------------------ */
-const DEFAULTS = { master: 80, music: 70, engine: 80, sfx: 80, time: 'cycle', weather: 'dynamic', traffic: '1', quality: 'high', units: 'kmh', shake: '1', car: 0, colors: {}, station: 1, best: 0 };
+const DEFAULTS = { master: 80, music: 70, engine: 80, sfx: 80, time: 'cycle', weather: 'dynamic', traffic: '1', quality: 'high', units: 'kmh', shake: '1', car: 0, colors: {}, station: 0, best: 0, hidden: {}, cam: 0 };
 let settings = { ...DEFAULTS };
 try { settings = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('autobahn-rush') || '{}') }; } catch {}
 const save = () => { try { localStorage.setItem('autobahn-rush', JSON.stringify(settings)); } catch {} };
@@ -50,26 +55,36 @@ addEventListener('resize', setupQuality);
 const sky = new Sky(scene, renderer);
 const world = new World(scene);
 const traffic = new Traffic(world);
+const police = new Police(); traffic.police = police;
 const audio = new GameAudio();
+const cockpit = new Cockpit();
+const fx = new Fx(world);
 sky.onThunder = (d) => audio.thunder(d);
 
-const spot = new THREE.SpotLight(0xfff0d8, 0, 320, 0.34, 0.95, 0.9);
+const spot = new THREE.SpotLight(0xfff0d8, 0, 260, 0.3, 0.95, 1.4);
 const spotTarget = new THREE.Object3D(); scene.add(spot, spotTarget); spot.target = spotTarget;
+const blueLight = new THREE.PointLight(0x2050ff, 0, 45, 1.6); scene.add(blueLight);
 
-const player = { s: 0, x: LANES[1], v: 0, vx: 0, steer: 0, gear: 1, rpm: 900, shiftT: 0, damage: 0, L: 4.8, W: 1.9, spec: null, mesh: null, accel: 0, pitch: 0, scrape: 0, gearV: [], thrAudio: 0 };
-const run = { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0 };
-let mode = 'menu', prevScreen = 'main', camMode = 0, shake = 0, orbit = 0.75, orbitV = 0, revHeld = false, flashT = 0, camX = 0, touchMode = false;
+// the player car: rig (position, heading, pitch, roll about its centre) > body mesh
+const rig = new THREE.Group(); rig.rotation.order = 'YXZ'; scene.add(rig);
+let carMesh = null, shadow = null;
+const veh = new Vehicle(CARS[0]);
+const run = { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0 };
+const view = { pitch: 0, lean: 0, camYaw: 0, head: new THREE.Vector3(), headRoll: 0 };
+let mode = 'menu', prevScreen = 'main', camMode = +settings.cam || 0, shake = 0, orbit = 0.75, orbitV = 0, revHeld = false, flashT = 0, camX = 0, touchMode = false;
 
 function setCar(i) {
   i = (i + CARS.length) % CARS.length; settings.car = i; save();
-  if (player.mesh) { scene.remove(player.mesh); player.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }); }
-  const spec = player.spec = CARS[i], ci = settings.colors[spec.id] || 0;
-  player.mesh = buildPlayerCar(spec, ci); scene.add(player.mesh);
-  player.L = spec.body.L; player.W = spec.body.W;
-  const n = spec.gears, v1 = (spec.vmax > 380 ? 100 : spec.vmax < 260 ? 60 : 74) / KMH, vN = spec.vmax * 1.03 / KMH;
-  player.gearV = Array.from({ length: n }, (_, g) => v1 * Math.pow(vN / v1, g / (n - 1)));
+  if (carMesh) { rig.remove(carMesh); carMesh.traverse((o) => { if (o.isMesh && o !== shadow) o.geometry.dispose(); }); }
+  if (shadow) scene.remove(shadow);
+  const spec = CARS[i], ci = settings.colors[spec.id] || 0;
+  carMesh = buildPlayerCar(spec, ci); carMesh.position.y = -spec.body.H / 2; rig.add(carMesh);
+  shadow = carMesh.children.find((c) => c.userData.isShadow); carMesh.remove(shadow); scene.add(shadow);
+  const keep = { x: veh.x, s: veh.s, v: veh.vs }; veh.setSpec(spec); veh.reset(keep.x || LANES[1], keep.s, keep.v);
+  cockpit.build(spec, carMesh);
   audio.setEngine(spec); updateGarageUI();
 }
+const player = veh;   // traffic and police read x, s, v, L, footW from the vehicle
 
 /* ------------------------------ input ------------------------------ */
 const keys = {};
@@ -82,9 +97,10 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyQ') audio.radio?.cycle(-1); if (e.code === 'KeyE') audio.radio?.cycle(1); if (e.code === 'KeyN') audio.radio?.next();
   if (e.code === 'KeyM') audio.radio?.stop();
   if (mode === 'play') {
-    if (e.code === 'KeyC') camMode = (camMode + 1) % 3;
-    if (e.code === 'KeyF') { flashT = 0.35; traffic.flashAt(player); }
+    if (e.code === 'KeyC') { camMode = (camMode + 1) % 3; settings.cam = camMode; save(); toast(['CHASE CAM', 'FAR CAM', 'COCKPIT'][camMode], '', ''); }
+    if (e.code === 'KeyF') { flashT = 0.35; traffic.flashAt(veh); }
     if (e.code === 'KeyH') audio.horn(true);
+    if (e.code === 'KeyR') recover();
   } else if (e.code === 'Enter' && (mode === 'menu' || mode === 'over')) go('play');
   if (mode === 'garage') { if (e.code === 'ArrowLeft') setCar(settings.car - 1); if (e.code === 'ArrowRight') setCar(settings.car + 1); }
 });
@@ -105,12 +121,12 @@ function readInput(dt) {
 
 /* ------------------------------ game flow ------------------------------ */
 function startRun() {
-  world.reset(); traffic.reset();
-  Object.assign(player, { s: 0, x: LANES[1], v: 100 / KMH, vx: 0, damage: 0, shiftT: 0, scrape: 0 });
-  player.gear = 1; while (player.gear < player.gearV.length && player.v > player.gearV[player.gear - 1] * 0.8) player.gear++;
-  Object.assign(run, { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0 });
-  camX = player.x; $('toasts').innerHTML = '';
+  world.reset(); traffic.reset(); police.reset(); fx.reset();
+  veh.reset(LANES[1], 0, 100 / KMH);
+  Object.assign(run, { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0 });
+  camX = veh.x; view.camYaw = 0; $('toasts').innerHTML = '';
   toast('FREIE FAHRT', 'No limit. Don\'t hit anything.', 'good');
+  showRadioPop();
 }
 function toast(text, sub, cls = '') {
   const t = document.createElement('div'); t.className = 'toast ' + cls; t.textContent = text;
@@ -126,21 +142,23 @@ function go(target) {
     case 'play': mode = 'play'; startRun(); show(null); break;
     case 'resume': mode = 'play'; show(null); break;
     case 'pause': mode = 'paused'; prevScreen = 'pause'; show('pause'); break;
-    case 'main': mode = 'menu'; prevScreen = 'main'; traffic.reset(); updateMainUI(); show('main'); break;
-    case 'garage': mode = 'garage'; prevScreen = 'main'; traffic.reset(); updateGarageUI(); show('garage'); break;
-    case 'music': if (mode !== 'paused') { mode = 'menu'; prevScreen = 'main'; } updateMusicUI(); show('music'); break;
-    case 'settings': if (mode !== 'paused') { mode = 'menu'; prevScreen = 'main'; } show('settings'); break;
+    case 'main': mode = 'menu'; prevScreen = 'main'; resetToCruise(); updateMainUI(); show('main'); break;
+    case 'garage': mode = 'garage'; prevScreen = 'main'; resetToCruise(); updateGarageUI(); show('garage'); break;
+    case 'music': if (mode !== 'paused') { if (mode !== 'menu') resetToCruise(); mode = 'menu'; prevScreen = 'main'; } musicSel = audio.radio?.station >= 0 ? audio.radio.station : musicSel; updateMusicUI(); show('music'); break;
+    case 'settings': if (mode !== 'paused') { if (mode !== 'menu') resetToCruise(); mode = 'menu'; prevScreen = 'main'; } show('settings'); break;
     case 'over': mode = 'over'; show('over'); break;
   }
 }
+function resetToCruise() { traffic.reset(); police.reset(); fx.reset(); veh.reset(LANES[1], veh.s, veh.vs); }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) { boot(); go(b.dataset.go); } });
 
 let booted = false;
 async function boot() {
   if (booted) { audio.resume(); return; } booted = true;
-  await audio.init(); applyAudioSettings(); audio.setEngine(player.spec);
-  audio.radio.onChange = (info) => { settings.station = audio.radio.station; save(); updateRadioUI(info); };
-  await audio.radio.user.ready; audio.radio.setStation(settings.station);
+  await audio.init(); applyAudioSettings(); audio.setEngine(veh.spec);
+  audio.radio.hidden = settings.hidden;
+  audio.radio.onChange = (info) => { settings.station = audio.radio.station; save(); updateRadioUI(info); showRadioPop(); };
+  await audio.radio.user.ready; audio.radio.setStation(Math.min(settings.station, STATIONS.length - 1));
 }
 addEventListener('pointerdown', boot);
 
@@ -148,163 +166,236 @@ function fmtSpeed(ms) { return Math.round(ms * (settings.units === 'mph' ? 2.236
 
 function gameOver() {
   const best = Math.max(settings.best, Math.round(run.score)), isBest = run.score > settings.best && run.score > 0; settings.best = best; save();
+  $('o-kicker').textContent = run.end || 'TOTALSCHADEN';
   $('o-score').textContent = Math.round(run.score).toLocaleString('en'); $('o-best').textContent = isBest ? 'NEW BEST' : 'BEST ' + best.toLocaleString('en');
-  $('o-dist').textContent = (player.s / 1000).toFixed(1); $('o-top').textContent = fmtSpeed(run.top); $('o-unit').textContent = 'top ' + (settings.units === 'mph' ? 'mph' : 'km/h');
+  $('o-dist').textContent = (veh.s / 1000).toFixed(1); $('o-top').textContent = fmtSpeed(run.top); $('o-unit').textContent = 'top ' + (settings.units === 'mph' ? 'mph' : 'km/h');
   $('o-near').textContent = run.near; $('o-fines').textContent = run.fines; go('over');
 }
+function endRun(reason) { if (run.wreckT > 0) return; run.end = reason; run.wreckT = 0.001; }
 
 /* ------------------------------ physics ------------------------------ */
-function drive(dt) {
-  const spec = player.spec, N = player.gearV.length, wrecked = run.wreckT > 0;
-  const grip = 1 - sky.wet * 0.3 - sky.snowCover * 0.4;
-  const thr = wrecked ? 0 : input.throttle, brk = wrecked ? 1 : input.brake;
-  let rpm = Math.max(spec.idle, spec.redline * player.v / player.gearV[player.gear - 1]);
-  if (player.shiftT > 0) player.shiftT -= dt;
-  else if (rpm > spec.redline * 0.965 && player.gear < N) { player.gear++; player.shiftT = 0.13; }
-  else if (player.gear > 1 && player.v < player.gearV[player.gear - 2] * (thr > 0.8 ? 0.8 : 0.55)) { player.gear--; player.shiftT = 0.1; }
-  rpm = Math.min(spec.redline, Math.max(spec.idle, spec.redline * player.v / player.gearV[player.gear - 1]));
-  const rn = rpm / spec.redline, vmax = spec.vmax / KMH, P = spec.ps * 735.5 * 0.86, kd = P / (vmax * vmax * vmax);
-  const curve = Math.min(1, 0.25 + rn / 0.78) * (rn > 0.975 ? 1 - (rn - 0.975) * 6 : 1);
-  const power = player.shiftT > 0 ? 0 : thr;
-  let F = power * Math.min(spec.mass * 9.81 * (spec.awd ? 1.05 : 0.82) * grip, P * curve / Math.max(player.v, 6));
-  let a = (F - kd * player.v * player.v) / spec.mass - 0.14 - (thr < 0.05 ? 0.5 : 0) - brk * 11.5 * grip;
-  if (wrecked) a = -14;
-  player.v = Math.max(0, player.v + a * dt); player.accel = a;
-  player.s += player.v * dt;
-  player.rpm += (rpm - player.rpm) * Math.min(1, dt * 16); player.thrAudio = power;
-
-  // lateral
-  const maxLat = (2.6 + Math.min(player.v, 80) * 0.052) * spec.handling * Math.min(1, player.v / 8);
-  player.vx += ((wrecked ? 0 : input.steer) * maxLat - player.vx) * Math.min(1, dt * (5.5 * grip * spec.handling));
-  player.x += player.vx * dt;
-  const xmin = ROAD.left - 0.45 + player.W / 2, xmax = ROAD.right + 0.55 - player.W / 2;
-  player.scrape = 0;
-  if (player.x < xmin || player.x > xmax) {
-    player.x = clamp(player.x, xmin, xmax); player.vx *= -0.2; player.scrape = Math.min(1, player.v / 30);
-    player.v -= player.v * 0.45 * dt; hurt(dt * (3 + player.v * 0.2)); shake = Math.max(shake, 0.05);
-  }
+function grip() {
+  let g = 1 - 0.38 * sky.wet - 0.12 * sky.cur.storm - 0.62 * sky.snowCover;
+  if (sky.cur.rain > 0.3) g *= 1 - 0.16 * clamp((veh.speed - 30) / 40, 0, 1) * sky.cur.rain;   // aquaplaning
+  return Math.max(0.3, g);
 }
-function hurt(d) { if (run.wreckT > 0) return; player.damage = Math.min(100, player.damage + d); if (player.damage >= 100) { run.wreckT = 0.001; audio.crash(1); shake = 0.5; toast('TOTALSCHADEN', '', 'bad'); } }
+const env = { mu: null, base: 1, assist: true, canRoll: true };
+const PAINT = () => carMesh.userData.paint.color.getHex();
 
-function collisions() {
-  for (const c of traffic.cars) {
-    const dx = player.x - c.x, ds = c.s - player.s, sw = (player.W + c.W) / 2, sl = (player.L + c.L) / 2;
-    const ox = sw - Math.abs(dx), os = sl - Math.abs(ds);
-    if (ox > 0.06 && os > 0) {
-      const dv = player.v - c.v, first = c.hit <= 0;
-      if (ox < 0.5 && ox < os) { // side swipe
-        const dir = Math.sign(dx) || 1; player.x += dir * ox; player.vx = dir * 2.2;
-        if (first) { hurt(6 + Math.abs(dv) * 0.5); audio.crash(0.3); shake = Math.max(shake, 0.18); player.v *= 0.97; }
-        c.hit = 0.5;
-      } else if (ds > 0) { // we rammed them
-        player.s = c.s - sl - 0.02; if (first) { hurt(Math.abs(dv) * 3.1 + 4); audio.crash(clamp(Math.abs(dv) / 30, 0.3, 1)); shake = Math.max(shake, clamp(Math.abs(dv) / 40, 0.15, 0.6)); }
-        const vv = (player.v * 0.6 + c.v * 0.4); c.v = vv + 1; player.v = Math.max(0, vv - 2); c.hit = 0.8;
-      } else { // rear-ended by traffic
-        c.s = player.s - sl - 0.02; if (first) { hurt(Math.abs(dv) * 2 + 3); audio.crash(0.4); shake = Math.max(shake, 0.2); }
-        const vv = (player.v + c.v) / 2; player.v = vv + 1; c.v = Math.max(0, vv - 2); c.hit = 0.8;
-      }
-      run.combo = 0;
+function physics(dt, driving) {
+  const n = 4, h = dt / n, base = grip();
+  env.base = base; env.mu = (x, s) => base * world.surface(x, s);
+  const inp = driving && !veh.wrecked ? input : { throttle: 0, brake: veh.wrecked ? 0.6 : 0, steer: 0 };
+  for (let k = 0; k < n; k++) {
+    veh.step(h, inp, env);
+    // guardrails and closures
+    const hw = walls(veh, (s) => world.bounds(s), 0.2, 0.35);
+    if (hw && hw.j > 0) {
+      const dv = hw.j / veh.m;
+      if (dv > 0.6) hurt(dv, 'wall');
+      veh.scrape = Math.min(1, veh.speed / 25);
+      if (Math.random() < 0.5) fx.spark(hw.p[0], 0.35, hw.p[1], veh.vx, veh.vs, 2);
+      if (dv > 4) { audio.crash(clamp(dv / 15, 0.2, 1)); fx.debris(hw.p[0], 0.5, hw.p[1], veh.vx, veh.vs, 4, PAINT()); shake = Math.max(shake, clamp(dv / 25, 0.1, 0.5)); }
+      if (dv > 3 && veh.sideways > 0.45 && Math.abs(veh.w) > 9 && Math.random() < 0.35) veh.startRoll(Math.sign(hw.n[0]), Math.abs(veh.w));
     }
-    // overtakes, near misses
-    if (!c.passed && player.s - player.L / 2 > c.s - c.L * 0.25) {
-      c.passed = true; const gap = Math.abs(dx) - sw, dvk = (player.v - c.v) * KMH;
-      if (gap < 5 && dvk > 15) audio.whoosh(clamp((c.x - player.x) / 4, -1, 1), clamp(dvk / 200, 0, 1) * (c.kind === 'truck' ? 1.3 : 1));
-      if (gap < 1.15 && gap > -0.05 && dvk > 30 && c.hit <= 0 && run.wreckT <= 0) {
-        run.combo = Math.min(9, run.combo + 1); run.comboT = 5; run.near++; const pts = Math.round((100 + dvk) * run.combo); run.score += pts;
-        toast(`NEAR MISS ×${run.combo}`, `+${pts}`, 'good'); audio.bonus();
-      }
-    } else if (c.passed && c.s - c.L / 2 > player.s + player.L / 2 + 4) c.passed = false;
+    // traffic
+    for (const c of traffic.cars) {
+      if (Math.abs(c.s - veh.s) > 14 || Math.abs(c.x - veh.x) > 5) continue;
+      const hit = sat(veh, c); if (!hit) continue;
+      const j = resolve(veh, c, hit, 0.12, 0.35);
+      if (j > 0) carHit(c, j, hit);
+    }
+    for (const o of world.obstacles) {
+      if (Math.abs(o.s - veh.s) > 14 || Math.abs(o.x - veh.x) > 10) continue;
+      const hit = sat(veh, o); if (!hit) continue;
+      const j = resolve(veh, o, hit, 0.1, 0.4);
+      if (j > 0) { const dv = j / veh.m; hurt(dv, 'obstacle'); if (dv > 2) { audio.crash(clamp(dv / 15, 0.3, 1)); fx.debris(hit.p[0], 0.6, hit.p[1], veh.vx, veh.vs, 6, PAINT()); shake = Math.max(shake, 0.3); } }
+    }
   }
+  // rollover events
+  for (const e of veh.events) {
+    if (e.type === 'roll') { endRun('ÜBERSCHLAG'); toast('ÜBERSCHLAG!', '', 'bad'); audio.crash(1); audio.glass(); shake = 0.6; }
+    if (e.type === 'impact') { audio.impact(e.strength); fx.debris(veh.x, 0.4, veh.s, veh.vx, veh.vs, 3 + (e.strength * 8 | 0), PAINT()); fx.puff(veh.x, 0.3, veh.s, veh.vx, veh.vs, 3, false, 2); shake = Math.max(shake, e.strength * 0.5); if (e.strength > 0.5) audio.glass(); }
+  }
+  veh.events.length = 0;
+}
+function hurt(dv, what) {
+  if (run.wreckT > 0 && what !== 'car') return;
+  veh.damage = Math.min(100, veh.damage + dv * dv * 0.3 + dv * 1.2);
+  if (veh.damage >= 100 && !veh.wrecked) { veh.wrecked = true; endRun('TOTALSCHADEN'); audio.crash(1); audio.glass(); shake = 0.5; toast('TOTALSCHADEN', '', 'bad'); fx.puff(veh.x, 0.9, veh.s, 0, veh.vs, 8, true, 1.8); }
+}
+function carHit(c, j, hit) {
+  const dv = j / veh.m, dvc = j / c.m;
+  hurt(dv, 'car'); traffic.knock(c, dvc);
+  const strength = clamp(Math.max(dv, dvc) / 12, 0.15, 1);
+  if (performance.now() - run.lastHit > 180) { audio.crash(strength); if (strength > 0.4) audio.glass(); run.lastHit = performance.now(); }
+  fx.debris(hit.p[0], 0.55, hit.p[1], (veh.vx + c.vx) / 2, (veh.vs + c.vs) / 2, 2 + (strength * 10 | 0), c.mesh.userData.paint ? c.mesh.userData.paint.color.getHex() : PAINT());
+  shake = Math.max(shake, strength * 0.6); run.combo = 0;
+  if (mode !== 'play' || veh.wrecked) return;
+  // touching another car and driving on is a crime
+  if (c.police) { if (police.active) { police.trigger('WIDERSTAND', 40, 4); } }
+  else if (!c.touched) { c.touched = true; if (police.trigger('UNFALLFLUCHT', 45, 3)) toast('UNFALLFLUCHT', 'Polizei alarmiert', 'bad'); }
+  if (Math.abs(hit.n[0]) > 0.7 && veh.sideways > 0.45 && Math.abs(veh.w) > 10 && Math.random() < 0.25) veh.startRoll(Math.sign(-hit.n[0]) || 1, Math.abs(veh.w));
+}
+function recover() {
+  if (veh.rolling || veh.wrecked || veh.speed > 6 || (Math.abs(veh.psi) < 0.5 && veh.speed > 1)) return;
+  const lane = LANES.reduce((b, l) => (Math.abs(l - veh.x) < Math.abs(b - veh.x) ? l : b), LANES[1]);
+  Object.assign(veh, { psi: 0, r: 0, vx: 0, vs: 4, x: lane }); run.recoverT = 0; run.score = Math.max(0, run.score - 500); toast('ZURÜCK AUF DER SPUR', '−500', '');
 }
 
+/* ------------------------------ scoring & rules ------------------------------ */
 function rules(dt) {
-  const vk = player.v * KMH, limit = world.limitAt(player.s);
-  run.time += dt; run.top = Math.max(run.top, player.v);
-  if (run.wreckT <= 0) run.score += player.v * dt * 0.1 * Math.pow(vk / 100, 2);
+  const vk = veh.vs * KMH, limit = world.limitAt(veh.s);
+  run.time += dt; run.top = Math.max(run.top, veh.speed);
+  if (run.wreckT <= 0) run.score += Math.max(0, veh.vs) * dt * 0.1 * Math.pow(Math.max(0, vk) / 100, 2);
   if (run.comboT > 0) { run.comboT -= dt; if (run.comboT <= 0) run.combo = 0; }
   if (limit !== run.limit) { if (limit) toast(`TEMPOLIMIT ${limit}`, 'Blitzer ahead? Maybe.', ''); else toast('FREIE FAHRT', 'End of all restrictions', 'good'); run.limit = limit; }
-  for (const b of world.blitzers) if (!b.done && player.s > b.s) {
+  for (const b of world.blitzers) if (!b.done && veh.s > b.s) {
     b.done = true; const over = vk - b.limit;
     if (over > 9) { const fine = Math.round(over * 15); run.score = Math.max(0, run.score - fine); run.fines++; b.obj.userData.flash.opacity = 1; audio.blitz();
       const f = $('flash'); f.style.transition = 'none'; f.style.background = '#ff3020'; f.style.opacity = 0.55; requestAnimationFrame(() => { f.style.transition = 'opacity 0.5s'; f.style.opacity = 0; });
-      toast('GEBLITZT!', `${fmtSpeed(player.v)} in a ${b.limit} zone · −${fine}`, 'bad'); }
+      toast('GEBLITZT!', `${fmtSpeed(veh.vs)} in a ${b.limit} zone · −${fine}`, 'bad');
+      if (over > 50 && police.trigger('RASEREI', 60, 4)) setTimeout(() => toast('RASEREI', `${Math.round(over)} km/h zu schnell · Polizei alarmiert`, 'bad'), 900); }
   }
   for (const club of [300, 350, 400]) if (vk >= club && !run.clubs[club]) { run.clubs[club] = 1; run.score += club * 5; toast(`${club} KM/H CLUB`, `+${club * 5}`, 'good'); audio.bonus(); }
-  if (run.wreckT > 0) { run.wreckT += dt; if (run.wreckT > 2.2 && mode === 'play') gameOver(); }
+  // overtakes and near misses (clean passes only: touching is a crime, not a bonus)
+  for (const c of traffic.cars) {
+    if (c.crashed) continue;
+    const dx = veh.x - c.x, sw = (veh.footW + c.W) / 2;
+    if (!c.passed && veh.s - veh.L / 2 > c.s - c.L * 0.25) {
+      c.passed = true; const gap = Math.abs(dx) - sw, dvk = (veh.vs - c.vs) * KMH;
+      if (gap < 5 && dvk > 15) audio.whoosh(clamp((c.x - veh.x) / 4, -1, 1), clamp(dvk / 200, 0, 1) * (c.kind === 'truck' ? 1.3 : 1));
+      if (gap < 1.15 && gap > 0.02 && dvk > 30 && !c.touched && run.wreckT <= 0 && !c.police) {
+        run.combo = Math.min(9, run.combo + 1); run.comboT = 5; run.near++; const pts = Math.round((100 + dvk) * run.combo); run.score += pts;
+        toast(`NEAR MISS ×${run.combo}`, `+${pts}`, 'good'); audio.bonus();
+      }
+    } else if (c.passed && c.s - c.L / 2 > veh.s + veh.L / 2 + 4) c.passed = false;
+  }
+  // police
+  const res = police.update(dt, veh, traffic); world.policeActive = police.active;
+  if (res === 'busted') { endRun('FESTGENOMMEN'); toast('FESTGENOMMEN', 'Aussteigen, Hände aufs Dach.', 'bad'); audio.busted(); }
+  else if (res === 'escaped') { run.score += 2500; toast('ENTKOMMEN!', 'Polizei abgehängt · +2500', 'good'); audio.bonus(); }
+  else if (res === 'gaveup') { run.score += 1500; toast('POLIZEI GIBT AUF', '+1500', 'good'); audio.bonus(); }
+  // stuck facing the wrong way: offer a recovery
+  if (!veh.wrecked && veh.speed < 3 && Math.abs(veh.psi) > 0.5) { run.recoverT += dt; if (run.recoverT > 1.2 && !run.hintShown) { run.hintShown = true; toast('DRÜCKE R', 'to get back on track', ''); } if (run.recoverT > 6) recover(); }
+  else { run.recoverT = 0; if (veh.speed > 10) run.hintShown = false; }
+  if (run.wreckT > 0) { run.wreckT += dt; if (run.wreckT > (veh.rolling ? 2 : 2.4) && (veh.settled || !veh.rolling) && veh.speed < 4 && mode === 'play') gameOver(); else if (run.wreckT > 9 && mode === 'play') gameOver(); }
 }
 
 /* ------------------------------ per-frame visuals ------------------------------ */
-const _v = new THREE.Vector3(), _t = new THREE.Vector3();
+const _v = new THREE.Vector3(), _t = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
 function updateCar(dt) {
-  const m = player.mesh, u = m.userData;
-  m.position.set(player.x, 0, 0);
-  const wreck = run.wreckT > 0 && mode !== 'menu' && mode !== 'garage';
-  m.rotation.y = wreck ? m.rotation.y + dt * player.v * 0.12 : -Math.atan2(player.vx, Math.max(player.v, 12)) * 1.6;
-  player.pitch += (clamp(player.accel, -12, 8) * 0.0035 - player.pitch) * Math.min(1, dt * 6);
-  m.rotation.x = player.pitch; m.rotation.z = -player.vx * 0.012;
-  const spin = player.v * dt / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
-  for (const f of u.front) f.rotation.y = -input.steer * 0.14;
-  const braking = mode === 'play' && (input.brake > 0.1 || wreck);
+  const u = carMesh.userData, H = veh.H;
+  view.pitch += (clamp(veh.ax, -12, 8) * 0.0032 - view.pitch) * Math.min(1, dt * 6);
+  view.lean += (clamp(-veh.ay, -12, 12) * 0.0045 - view.lean) * Math.min(1, dt * 5);
+  rig.position.set(veh.x, veh.rolling ? veh.yc : H / 2, -(veh.s - world.s));
+  rig.rotation.set(veh.rolling ? 0 : view.pitch, -veh.psi, -(veh.phi + (veh.rolling ? 0 : view.lean)));
+  rig.updateMatrixWorld(true);
+  shadow.position.set(veh.x, 0.02, rig.position.z); shadow.rotation.set(-Math.PI / 2, 0, -veh.psi); shadow.material.opacity = 0.75 * clamp(1 - (veh.yc - H / 2) / 3, 0, 1);
+  const spin = veh.u * dt / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
+  for (const f of u.front) f.rotation.y = -input.steer * 0.42 * clamp(1 - veh.speed / 50, 0.12, 1);
+  const braking = mode === 'play' && (input.brake > 0.1 || veh.wrecked);
   u.tail.emissiveIntensity = braking ? 8 : 0.35 + sky.night * 2 + sky.cur.rain;
-  const needLights = clamp(sky.night + sky.cur.rain * 0.5 + sky.cur.fog * 50, 0, 1);
+  // headlights, aimed along the car
+  const needLights = clamp(sky.night + sky.cur.rain * 0.5 + sky.fogLevel * 0.8, 0, 1);
   flashT = Math.max(0, flashT - dt);
-  spot.intensity = needLights * 260 + (flashT > 0 ? 500 : 0);
-  spot.position.set(player.x, 0.95, -player.L / 2 + 0.2); spotTarget.position.set(player.x, 0.1, -130);
+  spot.intensity = veh.rolling ? 0 : needLights * 620 + (flashT > 0 ? 1100 : 0);
+  carMesh.localToWorld(spot.position.set(0, 0.95, -veh.L / 2 + 0.2)); carMesh.localToWorld(spotTarget.position.set(0, -2.5, -130));
   if (flashT > 0) MATS.head.emissiveIntensity = 14;
+  // skid marks and tyre smoke from the rear wheels (and the fronts when they lock)
+  const fxs = Math.sin(veh.psi), fcs = Math.cos(veh.psi), t2 = veh.track / 2, onRoad = !veh.rolling;
+  const wheelsAt = (d) => [[veh.x + fxs * d - fcs * t2, veh.s + fcs * d + fxs * t2], [veh.x + fxs * d + fcs * t2, veh.s + fcs * d - fxs * t2]];
+  const k = onRoad && mode !== 'menu' && mode !== 'garage' ? veh.skid : 0;
+  wheelsAt(-veh.b).forEach(([x, s], i) => { fx.skid('r' + i, x, s, k); if (k > 0.45 && Math.random() < k * 0.5) fx.puff(x, 0.25, s, veh.vx, veh.vs, 1, false, 1.2); });
+  const kf = input.brake > 0.5 && veh.mu < 0.5 ? k : veh.sliding ? k * 0.8 : 0;
+  wheelsAt(veh.a).forEach(([x, s], i) => fx.skid('f' + i, x, s, kf));
+  if (veh.wrecked && Math.random() < dt * 6) { carMesh.localToWorld(_v.set(0, 0.9, -veh.L / 2 + 0.6)); fx.puff(_v.x, _v.y, -_v.z + world.s, 0, 0, 1, true, 1.6); }
 }
 
 function updateCamera(dt, t) {
-  const vn = clamp(player.v / 110, 0, 1.2), sh = settings.shake === '1' ? 1 : 0;
+  const vn = clamp(veh.speed / 110, 0, 1.2), sh = settings.shake === '1' ? 1 : 0, pz = rig.position.z;
   shake = Math.max(0, shake - dt * 1.4);
+  const inCar = camMode === 2 && (mode === 'play' || mode === 'paused') && !veh.rolling;
+  cockpit.setVisible(inCar); $('hud').classList.toggle('incar', inCar);
+  const near = inCar ? 0.05 : 0.3; if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
   if (mode === 'play' || mode === 'paused' || mode === 'over') {
-    camX += (player.x - camX) * Math.min(1, dt * 6);
+    camX += (veh.x - camX) * Math.min(1, dt * 6);
+    // the chase camera swings round with the car, but lags behind spins
+    const target = veh.rolling ? view.camYaw : clamp(veh.psi, -1.2, 1.2) * 0.85;
+    view.camYaw += (target - view.camYaw) * Math.min(1, dt * (Math.abs(veh.r) > 1 ? 1.2 : 3));
+    const cy = Math.cos(view.camYaw), syw = Math.sin(view.camYaw);
+    if (inCar) {
+      // eye in the driver's seat: the head moves with g-forces, looks a little into turns
+      view.head.x += (clamp(veh.ay * -0.004, -0.05, 0.05) - view.head.x) * Math.min(1, dt * 6);
+      view.head.z += (clamp(veh.ax * 0.003, -0.04, 0.03) - view.head.z) * Math.min(1, dt * 6);
+      view.headRoll += (clamp(veh.ay * 0.0035, -0.05, 0.05) - view.headRoll) * Math.min(1, dt * 5);
+      _v.copy(cockpit.eye).add(view.head); _v.y += Math.sin(t * 31) * 0.0012 * vn + (Math.random() - 0.5) * 0.004 * vn * vn;
+      carMesh.localToWorld(camera.position.copy(_v));
+      carMesh.getWorldQuaternion(_q); camera.quaternion.copy(_q).multiply(new THREE.Quaternion().setFromEuler(_e.set(-0.055, -input.steer * 0.06, view.headRoll, 'YXZ')));
+      const fov = 66 + 10 * vn; camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
+      if (shake > 0 && sh) camera.position.addScaledVector(_t.set(Math.random() - 0.5, Math.random() - 0.5, 0), shake * 0.15);
+      camera.updateProjectionMatrix(); if (window.__debugCam) window.__debugCam(camera, rig); return;
+    }
+    const back = camMode === 0 ? 6.3 - vn * 0.5 : 10.5, up = camMode === 0 ? 2.0 + vn * 0.15 : 3.6;
+    const cx = (veh.rolling ? veh.x : camX * 0.9 + veh.x * 0.1);
+    camera.position.set(cx - syw * back * 0.9, up, pz + cy * back);
+    _t.set(veh.x + syw * 14, camMode === 0 ? 1.05 : 0.8, pz - cy * (camMode === 0 ? 16 : 20));
+    if (veh.rolling) _t.set(veh.x, veh.yc, pz);
     const fov = 58 + 30 * vn * vn / (0.4 + vn);
-    if (camMode === 0) { camera.position.set(camX * 0.92, 2.0 + vn * 0.15, 6.3 - vn * 0.5); _t.set(player.x * 0.95, 1.05, -16); }
-    else if (camMode === 1) { camera.position.set(camX * 0.8, 3.6, 10.5); _t.set(player.x * 0.9, 0.8, -20); }
-    else { camera.position.set(player.x, player.spec.body.H + 0.22, 0.25); _t.set(player.x + player.vx * 0.3, player.spec.body.H - 0.25, -30); }
     const k = (shake + vn * vn * 0.02) * sh;
     camera.position.x += (Math.random() - 0.5) * k; camera.position.y += (Math.random() - 0.5) * k * 0.7;
     camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
   } else {
     orbit += orbitV * dt; orbitV *= Math.pow(0.02, dt);
     const garage = mode === 'garage', a = garage ? orbit : 0.75 + Math.sin(t * 0.07) * 0.55, r = garage ? 6.6 : 7.4;
-    camera.position.set(player.x + Math.sin(a) * r, garage ? 1.45 : 1.6 + Math.sin(t * 0.05) * 0.3, -Math.cos(a) * r);
-    _t.set(player.x, 0.75, 0);
-    // shift the car to the right half so the menu has room
+    camera.position.set(veh.x + Math.sin(a) * r, garage ? 1.45 : 1.6 + Math.sin(t * 0.05) * 0.3, pz - Math.cos(a) * r);
+    _t.set(veh.x, 0.75, pz);
     if (innerWidth > 720) { _v.subVectors(_t, camera.position).normalize(); _v.set(_v.z, 0, -_v.x); _t.addScaledVector(_v, 1.9); }
     camera.fov += (38 - camera.fov) * Math.min(1, dt * 4);
   }
   camera.lookAt(_t); camera.updateProjectionMatrix();
+  if (window.__debugCam) window.__debugCam(camera, rig);
 }
 
+/* ------------------------------ HUD ------------------------------ */
 const hud = { last: {} };
 function setText(id, v) { if (hud.last[id] !== v) { hud.last[id] = v; $(id).textContent = v; } }
 function updateHUD() {
-  const vk = player.v * KMH, limit = run.limit;
-  setText('h-speed', fmtSpeed(player.v)); setText('h-unit', settings.units === 'mph' ? 'mph' : 'km/h'); setText('h-gear', player.gear);
-  $('h-rpm').style.width = (player.rpm / player.spec.redline * 100).toFixed(1) + '%';
-  setText('h-score', Math.round(run.score).toLocaleString('en')); setText('h-dist', (player.s / 1000).toFixed(1) + ' km');
+  const vk = veh.vs * KMH, limit = run.limit;
+  setText('h-speed', fmtSpeed(veh.speed)); setText('h-unit', settings.units === 'mph' ? 'mph' : 'km/h'); setText('h-gear', veh.gear);
+  $('h-rpm').style.width = (veh.rpm / veh.spec.redline * 100).toFixed(1) + '%';
+  setText('h-score', Math.round(run.score).toLocaleString('en')); setText('h-dist', (veh.s / 1000).toFixed(1) + ' km');
   setText('h-combo', run.combo > 1 ? `COMBO ×${run.combo}` : '');
-  const d = $('h-damage'); d.style.width = (100 - player.damage) + '%'; d.style.background = player.damage > 66 ? '#ff5a4f' : player.damage > 33 ? '#ffd60a' : '#4ade80';
+  const d = $('h-damage'); d.style.width = (100 - veh.damage) + '%'; d.style.background = veh.damage > 66 ? '#ff5a4f' : veh.damage > 33 ? '#ffd60a' : '#4ade80';
   const sign = $('h-sign'), over = limit && vk > limit + 5, cls = 'sign' + (limit ? '' : ' free') + (over ? ' over' : '');
   if (sign.className !== cls) sign.className = cls; setText('h-sign', limit ? String(settings.units === 'mph' ? Math.round(limit / 1.609) : limit) : '');
   document.querySelector('.speed').classList.toggle('over', !!over);
   setText('h-clock', sky.clockString()); const w = WEATHERS[sky.weather]; setText('h-weather', `${w.icon} ${w.label}`);
+  const slip = $('h-slip'); slip.classList.toggle('hidden', !(veh.sliding || veh.onSlick) || veh.rolling);
+  setText('h-slip', veh.onSlick ? (world.spills.find((s) => s.kind === 'oil') ? 'ÖL!' : 'GLATT!') : 'SLIDE');
+  // police pill
+  const pol = $('h-police'); pol.classList.toggle('hidden', !police.active);
+  if (police.active) { const live = police.chasing, near = live.reduce((m, c) => Math.min(m, Math.abs(c.s - veh.s)), Infinity);
+    setText('h-police-t', `${live.length} · ${isFinite(near) ? Math.round(near) + ' m' : '—'} · ${Math.max(0, Math.ceil(police.heat))} s`);
+    $('h-police-bar').style.width = clamp(police.bustT / 2.4, 0, 1) * 100 + '%'; }
 }
+let popT = 0;
+function showRadioPop() { const info = audio.radio?.info; if (!info) return; setText('rp-station', info.station); setText('rp-track', info.title ? `${info.title} — ${info.artist}` : '');
+  const el = $('radio-pop'); el.classList.add('show'); clearTimeout(popT); popT = setTimeout(() => el.classList.remove('show'), 3600); }
 
 /* ------------------------------ menus ------------------------------ */
 function updateMainUI() {
-  $('m-car').textContent = player.spec ? player.spec.name : ''; $('m-best').textContent = settings.best ? `BEST ${settings.best.toLocaleString('en')} PTS` : '';
+  $('m-car').textContent = veh.spec ? veh.spec.name : ''; $('m-best').textContent = settings.best ? `BEST ${settings.best.toLocaleString('en')} PTS` : '';
   $('m-radio').textContent = audio.radio && audio.radio.station >= 0 ? STATIONS[audio.radio.station].name : 'Radio';
 }
 function updateGarageUI() {
-  const s = player.spec; if (!s) return; const ci = settings.colors[s.id] || 0;
+  const s = veh.spec; if (!s || !carMesh) return; const ci = settings.colors[s.id] || 0;
   $('g-index').textContent = `${settings.car + 1} / ${CARS.length}`; $('g-name').textContent = s.name; $('g-sub').textContent = s.sub; $('g-engine').textContent = s.engine;
   $('g-ps').textContent = s.ps; $('g-vmax').textContent = s.vmax; $('g-acc').textContent = s.zeroTo100.toFixed(1);
   $('g-b1').style.width = (s.vmax / 440 * 100) + '%'; $('g-b2').style.width = clamp((5.2 - s.zeroTo100) / 3 * 100, 10, 100) + '%'; $('g-b3').style.width = clamp((s.handling - 0.6) / 0.55 * 100, 10, 100) + '%';
   const box = $('g-colors'); box.innerHTML = '';
   s.colors.forEach((c, i) => { const b = document.createElement('button'); b.style.background = '#' + c.toString(16).padStart(6, '0'); if (i === ci) b.className = 'on';
-    b.onclick = () => { settings.colors[s.id] = i; save(); setCarColor(player.mesh, s, i); updateGarageUI(); audio.click(); }; box.appendChild(b); });
+    b.onclick = () => { settings.colors[s.id] = i; save(); setCarColor(carMesh, s, i); updateGarageUI(); audio.click(); }; box.appendChild(b); });
   updateMainUI();
 }
 $('g-prev').onclick = () => { setCar(settings.car - 1); audio.click(); }; $('g-next').onclick = () => { setCar(settings.car + 1); audio.click(); };
@@ -314,25 +405,52 @@ addEventListener('pointerdown', (e) => { if (mode === 'garage' && !e.target.clos
 addEventListener('pointerup', () => { dragging = false; });
 addEventListener('pointermove', (e) => { if (dragging) { orbit -= e.movementX * 0.008; orbitV = -e.movementX * 0.3; } });
 
+let musicSel = 0, confirmDel = null;   // { i, until }: a delete waiting for its second click
 function updateRadioUI(info) {
   info = info || audio.radio?.info; if (!info) return;
-  setText('h-station', info.station); setText('h-freq', info.freq); setText('h-track', info.title || '—'); setText('h-artist', info.artist);
   $('mu-station').textContent = info.station + (info.freq ? ' · ' + info.freq : ''); $('mu-track').textContent = info.title || '—'; $('mu-artist').textContent = info.artist;
-  const el = $('h-radio'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
   for (const b of document.querySelectorAll('#mu-stations button')) b.classList.toggle('on', +b.dataset.i === audio.radio.station);
+  if (mode !== 'play' && !$('s-music').classList.contains('hidden')) renderTracks();
   updateMainUI();
 }
 function updateMusicUI() {
   const box = $('mu-stations'); box.innerHTML = '';
-  STATIONS.forEach((s, i) => { const b = document.createElement('button'); b.dataset.i = i; b.innerHTML = `<em>${s.freq}</em><span>${s.name}</span><small>${s.genre}</small>`;
-    b.onclick = async () => { await boot(); audio.radio.setStation(i); audio.tuning(); }; box.appendChild(b); });
-  const ul = $('mu-user'); ul.innerHTML = ''; const list = audio.radio ? audio.radio.user.list : [];
-  list.forEach((t, i) => { const d = document.createElement('div'); const n = document.createElement('span'); n.textContent = t.name; const x = document.createElement('button'); x.textContent = '✕';
-    x.onclick = async () => { await audio.radio.user.remove(i); updateMusicUI(); }; d.append(n, x); ul.appendChild(d); });
-  updateRadioUI();
+  STATIONS.forEach((s, i) => { const b = document.createElement('button'); b.dataset.i = i; b.classList.toggle('sel', i === musicSel);
+    b.innerHTML = `<em>${s.freq}</em><span>${s.name}</span><small>${s.genre}</small>`;
+    b.onclick = async () => { await boot(); musicSel = i; audio.radio.setStation(i); audio.tuning(); updateMusicUI(); }; box.appendChild(b); });
+  renderTracks(); updateRadioUI();
 }
+// the track list of the selected station: play, remove (built-in tracks can be restored; your own files are deleted)
+function renderTracks() {
+  const st = STATIONS[musicSel], list = $('mu-tracks'), hidden = settings.hidden[st.id] || [], r = audio.radio;
+  $('mu-tracks-title').textContent = st.user ? 'MEINE MUSIK · YOUR FILES' : `${st.name} · TRACKS`;
+  $('mu-user-tools').classList.toggle('hidden', !st.user);
+  list.innerHTML = '';
+  const rows = st.user ? (r ? r.user.list.map((t, i) => ({ i, title: t.name, artist: 'Your file' })) : []) : st.tracks.map((t, i) => ({ i, title: t[0], artist: t[1], off: hidden.includes(i) }));
+  if (!rows.length) { const e = document.createElement('div'); e.className = 'muted small'; e.textContent = st.user ? 'No files yet. Add your own music below.' : ''; list.appendChild(e); }
+  for (const row of rows) {
+    const d = document.createElement('div'); d.className = 'trk' + (row.off ? ' off' : '') + (r && r.station === musicSel && r.track === row.i ? ' on' : '');
+    const play = document.createElement('button'); play.className = 'ic'; play.textContent = '▶'; play.title = 'Play'; play.disabled = !!row.off;
+    play.onclick = async () => { await boot(); audio.radio.setStation(musicSel, row.i); };
+    const name = document.createElement('span'); name.innerHTML = `<b></b><small></small>`; name.querySelector('b').textContent = row.title; name.querySelector('small').textContent = row.artist;
+    const x = document.createElement('button'), sure = st.user && confirmDel && confirmDel.i === row.i && confirmDel.until > performance.now();
+    x.className = 'ic del' + (sure ? ' sure' : ''); x.textContent = sure ? 'DELETE?' : row.off ? '↺' : '✕'; x.title = st.user ? 'Delete this file' : row.off ? 'Put back' : 'Remove from rotation';
+    x.onclick = async () => {
+      await boot();
+      if (st.user) { if (!(confirmDel && confirmDel.i === row.i && confirmDel.until > performance.now())) { confirmDel = { i: row.i, until: performance.now() + 3000 }; renderTracks(); setTimeout(() => { if (confirmDel && confirmDel.until <= performance.now()) { confirmDel = null; renderTracks(); } }, 3100); return; }
+        confirmDel = null; const playing = audio.radio.station === musicSel && audio.radio.track === row.i; await audio.radio.user.remove(row.i);
+        if (playing) audio.radio.setStation(musicSel); else if (audio.radio.station === musicSel && audio.radio.track > row.i) audio.radio.track--; }
+      else { const h = settings.hidden[st.id] || (settings.hidden[st.id] = []); if (row.off) h.splice(h.indexOf(row.i), 1); else h.push(row.i); save(); audio.radio.hidden = settings.hidden; audio.radio.refresh(); }
+      renderTracks();
+    };
+    d.append(play, name, x); list.appendChild(d);
+  }
+  const removed = hidden.length;
+  $('mu-restore').classList.toggle('hidden', st.user || !removed); $('mu-restore').textContent = `RESTORE ${removed} REMOVED`;
+}
+$('mu-restore').onclick = () => { delete settings.hidden[STATIONS[musicSel].id]; save(); if (audio.radio) { audio.radio.hidden = settings.hidden; audio.radio.refresh(); } renderTracks(); };
 $('mu-prev').onclick = () => audio.radio?.next(-1); $('mu-next').onclick = () => audio.radio?.next(1); $('mu-off').onclick = () => audio.radio?.stop();
-$('mu-files').addEventListener('change', async (e) => { await boot(); await audio.radio.user.add([...e.target.files]); e.target.value = ''; audio.radio.setStation(STATIONS.findIndex((s) => s.user), Math.max(0, audio.radio.user.list.length - 1)); updateMusicUI(); });
+$('mu-files').addEventListener('change', async (e) => { await boot(); await audio.radio.user.add([...e.target.files]); e.target.value = ''; musicSel = STATIONS.findIndex((s) => s.user); audio.radio.setStation(musicSel, Math.max(0, audio.radio.user.list.length - 1)); updateMusicUI(); });
 
 function applyAudioSettings() { audio.vol = { master: settings.master / 100, music: settings.music / 100, engine: settings.engine / 100, sfx: settings.sfx / 100 }; audio.applyVolumes(); }
 function applyWorldSettings() { sky.setTimeMode(settings.time); sky.setWeatherMode(settings.weather); traffic.density = +settings.traffic; }
@@ -349,32 +467,52 @@ function frame() {
   simulate(Math.min(0.05, clock.getDelta()));
   render();
 }
+function sirenState() {
+  let best = null, bd = Infinity;
+  for (const c of police.chasing) { const d = Math.hypot(c.x - veh.x, c.s - veh.s); if (d < bd) { bd = d; best = c; } }
+  if (!best || bd > 600) { blueLight.intensity = 0; return null; }
+  const k = ((performance.now() / 60) | 0) % 8;
+  blueLight.position.set(best.x, 2.2, -(best.s - world.s)); blueLight.intensity = (k === 0 || k === 2 || k === 4 || k === 6 ? 30 : 0) * (0.3 + sky.night * 0.7 + sky.fogLevel * 0.5);
+  const approach = (best.vs - veh.vs) * Math.sign(veh.s - best.s);
+  return { level: Math.pow(clamp(1 - bd / 550, 0, 1), 1.4), pan: clamp((best.x - veh.x) / 14, -1, 1), cents: 1200 * Math.log2(343 / (343 - clamp(approach, -60, 60))) };
+}
 function simulate(dt) {
-  if (mode === 'paused') { audio.update({ rpm: player.spec.idle, throttle: 0, engineOn: false, bedsOn: false, speed: 0, wet: 0, rain: sky.cur.rain, scrape: 0 }); return; }
-  if (run.wreckT > 0 && mode === 'play') dt *= 0.45;
+  if (mode === 'paused') { audio.update({ rpm: veh.spec.idle, throttle: 0, engineOn: false, bedsOn: false, speed: 0, wet: 0, rain: sky.cur.rain, scrape: 0 }); return; }
+  if (mode === 'play' && veh.rolling) dt *= 0.6;            // a little slow motion while the car tumbles
   elapsed += dt; readInput(dt);
-  let engineOn = true, thr = 0;
-  if (mode === 'play') { drive(dt); collisions(); rules(dt); thr = player.thrAudio; }
-  else if (mode === 'over') { player.v = Math.max(0, player.v - 14 * dt); player.s += player.v * dt; player.rpm += (player.spec.idle - player.rpm) * dt * 3; engineOn = false; }
+  let engineOn = true, thr = 0; veh.scrape = 0;
+  if (mode === 'play') { physics(dt, true); rules(dt); thr = veh.thrAudio; engineOn = !veh.wrecked; }
+  else if (mode === 'over') { physics(dt, false); engineOn = false; }
   else { // menu / garage: the car idles or cruises for the camera
-    const tv = mode === 'garage' ? 0 : 118 / KMH; player.v += (tv - player.v) * Math.min(1, dt * 0.9); player.s += player.v * dt;
-    player.x += (LANES[1] - player.x) * Math.min(1, dt * 2); player.vx = 0; player.accel = 0; player.damage = 0; run.wreckT = 0; input.steer = 0;
-    const spec = player.spec;
-    if (mode === 'garage') { const target = revHeld ? spec.redline * 0.97 : spec.idle; player.rpm += (target - player.rpm) * Math.min(1, dt * (revHeld ? 2.6 : 2.0)); thr = revHeld ? 1 : 0; }
-    else { player.rpm += (spec.redline * 0.3 - player.rpm) * dt * 2; thr = 0.2; engineOn = false; }
+    const tv = mode === 'garage' ? 0 : 118 / KMH; veh.vs += (tv - veh.vs) * Math.min(1, dt * 0.9); veh.s += veh.vs * dt; veh.vx = 0;
+    veh.x += (LANES[1] - veh.x) * Math.min(1, dt * 2); veh.psi = 0; veh.r = 0; veh.ax = 0; veh.ay = 0; veh.damage = 0; veh.phi = 0; veh.rolling = false; veh.wrecked = false; veh.skid = 0; input.steer = 0; run.wreckT = 0;
+    const spec = veh.spec;
+    if (mode === 'garage') { const target = revHeld ? spec.redline * 0.97 : spec.idle; veh.rpm += (target - veh.rpm) * Math.min(1, dt * (revHeld ? 2.6 : 2.0)); thr = revHeld ? 1 : 0; }
+    else { veh.rpm += (spec.redline * 0.3 - veh.rpm) * dt * 2; thr = 0.2; engineOn = false; }
   }
-  world.update(dt, player.s, sky);
-  traffic.update(dt, player, sky, mode === 'play');
+  world.update(dt, veh.s, sky);
+  traffic.update(dt, veh, sky, mode === 'play' || mode === 'over');
+  fx.update(dt);
   updateCar(dt); updateCamera(dt, elapsed);
-  sky.update(dt, camera, player.v, player.s);
+  sky.update(dt, camera, veh.speed, veh.s);
+  const info = audio.radio?.info || {};
+  cockpit.update(dt, { speed: veh.speed, speedText: fmtSpeed(veh.speed), unit: settings.units === 'mph' ? 'MPH' : 'KM/H', rpm: veh.rpm, redline: veh.spec.redline, gear: veh.gear, steer: input.steer,
+    rain: Math.max(sky.cur.rain, sky.cur.snow * 0.6), limit: run.limit, station: info.station === 'RADIO OFF' ? '' : info.station, freq: info.freq, title: info.title, artist: info.artist,
+    clock: sky.clockString(), temp: Math.round(sky.snowCover > 0.2 || sky.cur.snow > 0.3 ? -2 : 12 + 9 * sky.daylight - 6 * sky.cur.rain), weather: WEATHERS[sky.weather].label.toUpperCase(),
+    police: police.active, slide: veh.sliding, onSlick: veh.onSlick, flash: flashT > 0, fog: sky.fogLevel > 0.3, damage: veh.damage, trip: (veh.s / 1000).toFixed(1), wrecked: veh.wrecked });
   if (mode === 'play') updateHUD();
-  audio.update({ rpm: player.rpm, throttle: thr, engineOn, bedsOn: mode === 'play', interior: camMode === 2, speed: player.v, wet: sky.wet, rain: sky.cur.rain, scrape: player.scrape });
+  audio.update({ rpm: veh.rpm, throttle: thr, engineOn, bedsOn: mode === 'play', interior: camMode === 2, speed: veh.speed, wet: sky.wet, rain: sky.cur.rain, scrape: veh.scrape,
+    skid: mode === 'play' && !veh.rolling ? veh.skid : 0, siren: mode === 'play' || mode === 'over' ? sirenState() : null });
   if (bloom) bloom.strength = 0.35 + sky.night * 0.45 + sky.cur.fog * 20;
   renderer.toneMappingExposure = 1.0 - sky.night * 0.1;
 }
-function render() { if (composer) composer.render(); else renderer.render(scene, camera); }
+function render() {
+  if (cockpit.group?.visible) cockpit.renderMirror(renderer, scene, carMesh);
+  if (composer) composer.render(); else renderer.render(scene, camera);
+}
 
 setupQuality(); applyWorldSettings(); setCar(settings.car); updateMainUI(); updateMusicUI();
 sky.setWeather(settings.weather === 'dynamic' ? 'clear' : settings.weather, true);
-window.__game = { simulate, input, keys, player, run, sky, world, traffic, audio, settings, go, setCar, get mode() { return mode; }, set cam(v) { camMode = v; }, set orbit(v) { orbit = v; } };
+window.__game = { simulate, input, keys, player: veh, veh, run, sky, world, traffic, police, audio, settings, cockpit, fx, go, setCar,
+  get mode() { return mode; }, set cam(v) { camMode = v; }, get cam() { return camMode; }, set orbit(v) { orbit = v; } };
 frame();

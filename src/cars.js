@@ -2,92 +2,12 @@
 // "in the spirit of" famous German/Italian/French performance cars.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { CARS } from './specs.js';
 
 /* ------------------------------------------------------------------ */
 /* Player car specs                                                    */
 /* ------------------------------------------------------------------ */
-export const CARS = [
-  {
-    id: 'm3', name: 'BAYERN M-DREI', sub: 'Competition · sport sedan',
-    engine: '3.0 L twin-turbo inline-6', ps: 510, mass: 1730, vmax: 290, zeroTo100: 3.9,
-    handling: 1.0, awd: false, gears: 8, redline: 7200, idle: 850,
-    colors: [0x1f6b3a, 0x0f3d8a, 0xd9d9d9, 0x111114, 0xf2c200, 0xb01018],
-    sound: { cyl: 6, f1: 150, f2: 520, bright: 0.75, decay: 95, rasp: 0.35, turbo: 0.5, pops: 0.6, uneven: 0.08, gain: 1.0 },
-    body: {
-      L: 4.79, W: 1.90, H: 1.43, c: 0.16, wheelR: 0.345, wb: 2.86, fo: 0.86,
-      hoodH: 0.80, noseH: 0.52, cowlH: 0.95, cowlX: 0.72, roofF: 0.05, roofR: -1.05,
-      baseR: -1.72, beltR: 0.98, deckH: 0.96, tailH: 0.92,
-      pillars: [-0.38], grille: 'kidney', head: 'slim', tail: 'L', wing: 'lip', exhaust: 'quad', flare: 0.03,
-    },
-  },
-  {
-    id: 'rs6', name: 'INGOLSTADT RS-SECHS', sub: 'Avant · super wagon',
-    engine: '4.0 L biturbo V8', ps: 630, mass: 2075, vmax: 305, zeroTo100: 3.4,
-    handling: 0.92, awd: true, gears: 8, redline: 6800, idle: 800,
-    colors: [0x6e7379, 0x101114, 0x7a1420, 0x16356e, 0xe9e9ea, 0x2e4d3a],
-    sound: { cyl: 8, f1: 105, f2: 380, bright: 0.6, decay: 70, rasp: 0.3, turbo: 0.45, pops: 0.8, uneven: 0.45, gain: 1.05 },
-    body: {
-      L: 4.99, W: 1.95, H: 1.46, c: 0.15, wheelR: 0.36, wb: 2.93, fo: 0.92,
-      hoodH: 0.84, noseH: 0.55, cowlH: 0.98, cowlX: 0.78, roofF: 0.12, roofR: -2.0,
-      baseR: -2.36, beltR: 1.0, deckH: 0.99, tailH: 0.95,
-      pillars: [-0.3, -1.25], grille: 'hex', head: 'angular', tail: 'bar', wing: 'roof', exhaust: 'oval', flare: 0.05,
-    },
-  },
-  {
-    id: 'maybach', name: 'STUTTGART MAIBACH S', sub: 'Landaulet · luxury limousine',
-    engine: '6.0 L biturbo V12', ps: 612, mass: 2350, vmax: 250, zeroTo100: 4.5,
-    handling: 0.78, awd: true, gears: 9, redline: 6000, idle: 650,
-    colors: [0x0c0c10, 0x3b2a1e, 0x1a2540, 0xc9c5bb, 0x4a0f18, 0x23362b],
-    twoTone: [0xb9b6ad, 0xcbb892, 0xc0c0c4, 0x15151a, 0xd8cdb8, 0xbfc2b8],
-    sound: { cyl: 12, f1: 95, f2: 300, bright: 0.3, decay: 80, rasp: 0.12, turbo: 0.2, pops: 0.0, uneven: 0.03, gain: 0.8 },
-    body: {
-      L: 5.47, W: 1.92, H: 1.51, c: 0.17, wheelR: 0.36, wb: 3.40, fo: 0.90,
-      hoodH: 0.90, noseH: 0.62, cowlH: 1.02, cowlX: 0.95, roofF: 0.30, roofR: -1.55,
-      baseR: -2.12, beltR: 1.03, deckH: 0.98, tailH: 0.90,
-      pillars: [-0.2, -1.2], grille: 'chrome', head: 'big', tail: 'L', wing: 'none', exhaust: 'oval', flare: 0.0, chromeTrim: true,
-    },
-  },
-  {
-    id: 'v10', name: 'TORO URAGANO', sub: 'V10 · mid-engine supercar',
-    engine: '5.2 L naturally aspirated V10', ps: 640, mass: 1490, vmax: 325, zeroTo100: 2.9,
-    handling: 1.12, awd: true, gears: 7, redline: 8600, idle: 950,
-    colors: [0x7bd10f, 0xf28a00, 0xf6e000, 0xe8e8ea, 0x0e0e12, 0x0a5bd0],
-    sound: { cyl: 10, f1: 190, f2: 760, bright: 1.0, decay: 120, rasp: 0.55, turbo: 0.0, pops: 0.9, uneven: 0.12, gain: 1.1 },
-    body: {
-      L: 4.52, W: 1.93, H: 1.17, c: 0.12, wheelR: 0.35, wb: 2.62, fo: 1.06,
-      hoodH: 0.60, noseH: 0.36, cowlH: 0.78, cowlX: 0.95, roofF: -0.05, roofR: -0.55,
-      baseR: -1.75, beltR: 0.92, deckH: 0.90, tailH: 0.84,
-      pillars: [], grille: 'intakes', head: 'y', tail: 'y', wing: 'lip', exhaust: 'center2', flare: 0.04, midEngine: true,
-    },
-  },
-  {
-    id: 'v12', name: 'TORO AVENTURA SV', sub: 'V12 · flagship supercar',
-    engine: '6.5 L naturally aspirated V12', ps: 770, mass: 1575, vmax: 350, zeroTo100: 2.8,
-    handling: 1.05, awd: true, gears: 7, redline: 8700, idle: 950,
-    colors: [0xe8a400, 0xc40d12, 0x10a0c8, 0x0e0e12, 0xf0f0f2, 0x6a1fb0],
-    sound: { cyl: 12, f1: 175, f2: 820, bright: 1.0, decay: 125, rasp: 0.6, turbo: 0.0, pops: 1.0, uneven: 0.05, gain: 1.15 },
-    body: {
-      L: 4.84, W: 2.03, H: 1.14, c: 0.115, wheelR: 0.365, wb: 2.70, fo: 1.14,
-      hoodH: 0.56, noseH: 0.33, cowlH: 0.74, cowlX: 1.05, roofF: 0.05, roofR: -0.5,
-      baseR: -1.95, beltR: 0.90, deckH: 0.88, tailH: 0.82,
-      pillars: [], grille: 'intakes', head: 'y', tail: 'y', wing: 'wing', exhaust: 'center1', flare: 0.05, midEngine: true,
-    },
-  },
-  {
-    id: 'w16', name: 'MOLSHEIM W16', sub: 'Super Sport · hypercar',
-    engine: '8.0 L quad-turbo W16', ps: 1600, mass: 1995, vmax: 440, zeroTo100: 2.4,
-    handling: 0.98, awd: true, gears: 7, redline: 7100, idle: 750,
-    colors: [0x0a2a6e, 0x101014, 0xb8180f, 0xe6e6e8, 0x0f5e58, 0xd96a00],
-    twoTone: [0x05070f, 0x2a2a30, 0x101014, 0x0a2a6e, 0x08090c, 0x101014],
-    sound: { cyl: 16, f1: 80, f2: 330, bright: 0.55, decay: 60, rasp: 0.3, turbo: 1.0, pops: 0.4, uneven: 0.1, gain: 1.2 },
-    body: {
-      L: 4.72, W: 2.04, H: 1.21, c: 0.12, wheelR: 0.37, wb: 2.71, fo: 1.0,
-      hoodH: 0.70, noseH: 0.44, cowlH: 0.86, cowlX: 0.80, roofF: -0.10, roofR: -0.70,
-      baseR: -1.95, beltR: 0.96, deckH: 0.93, tailH: 0.86,
-      pillars: [], grille: 'horseshoe', head: 'quad', tail: 'bar', wing: 'wing', exhaust: 'center2', flare: 0.04, midEngine: true, cLine: true,
-    },
-  },
-];
+export { CARS };
 
 /* Generic traffic bodies */
 const TRAFFIC_BODIES = {
@@ -232,7 +152,7 @@ function buildWheel(r, w, detail, sporty, side) {
 /* ------------------------------------------------------------------ */
 // Build coordinates: x forward, y up, z lateral. Rotated at the end so the
 // nose points to -Z (direction of travel).
-function buildBody(b, mats, detail) {
+function buildBody(b, mats, detail, cabin = false) {
   const g = new THREE.Group();
   const hl = b.L / 2, W = b.W;
   const taper = (x) => { const t = Math.min(1, Math.abs(x) / hl); return 1 - (x > 0 ? 0.20 : 0.13) * Math.pow(t, x > 0 ? 3.2 : 4) - (b.midEngine && x > 0 ? 0.06 * t * t : 0); };
@@ -248,7 +168,10 @@ function buildBody(b, mats, detail) {
   const rearX = -hl;
   const body = roundedPath([
     [rearX + 0.10, b.c, 0.06], [rearX, b.c + 0.22, 0.10], [rearX + 0.03, b.tailH, 0.10],
-    [b.baseR, b.beltR, 0.25], [b.cowlX, b.cowlH, 0.35],
+    [b.baseR, b.beltR, 0.25],
+    // cockpit version: the body is hollow where the cabin is, so the driver sees the dashboard, not the top of a solid block
+    ...(cabin ? [[b.baseR + 0.12, 0.3, 0.05], [b.cowlX - 0.1, 0.3, 0.05]] : []),
+    [b.cowlX, b.cowlH, 0.35],
     [hl - 0.28, b.hoodH, 0.30], [hl, b.noseH, 0.12], [hl - 0.04, b.c + 0.05, 0.08], [hl - 0.25, b.c, 0.05],
   ], 0.1);
   g.add(mesh(warp(extrude(body, W, 0.09, 4, 10), tumble), mats.paint));
@@ -284,7 +207,7 @@ function buildBody(b, mats, detail) {
     }
     for (const s of [-1, 1]) {
       const fg = extrude(frame, 0.03, 0, 1, 8); fg.translate(0, 0, s * (ghW / 2 + 0.012));
-      g.add(mesh(warp(fg, tumble), mats.roof));
+      g.add(mesh(warp(fg, tumble), cabin ? MATS.black : mats.roof));
     }
   }
 
@@ -411,6 +334,9 @@ function lineY(a, b, x) { return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0
 
 function assemble(b, mats, detail, sporty) {
   const { g, ind, axF, axR, zAt } = buildBody(b, mats, detail);
+  if (sporty && detail) { // the player car also gets a hollow-cabin body for the cockpit view
+    const cb = buildBody(b, mats, detail, true).g; cb.rotation.y = Math.PI / 2; const h = new THREE.Group(); h.add(cb); mats.cabinBody = bake(h); mats.cabinBody.visible = false;
+  }
   g.rotation.y = Math.PI / 2;
   const holder = new THREE.Group(); holder.add(g);
   const car = new THREE.Group();
@@ -430,7 +356,8 @@ function assemble(b, mats, detail, sporty) {
     w.rotation.y = Math.PI / 2;             // wheel axis: z -> x
     steer.add(w); car.add(steer); wheels.push(w.userData.spin); if (isF) front.push(steer);
   }
-  car.userData = { wheels, front, ind, body: baked, L: b.L, W: b.W, H: b.H, wheelR: b.wheelR };
+  if (mats.cabinBody) car.add(mats.cabinBody);
+  car.userData = { wheels, front, ind, body: baked, cabinBody: mats.cabinBody || null, L: b.L, W: b.W, H: b.H, wheelR: b.wheelR };
   return car;
 }
 
@@ -498,6 +425,41 @@ function buildTruck() {
 }
 
 // Traffic factory: prebuilt templates, cheap per-instance clones
+// Autobahnpolizei estate: silver with blue and yellow livery, roof light bar
+function textTex(text, color, w = 512, h = 96) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  g.fillStyle = color; g.font = `bold ${h * 0.78}px "DIN Alternate","Bahnschrift","Arial Narrow",Arial,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h * 0.55);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+function buildPolice() {
+  const b = { ...TRAFFIC_BODIES.wagon, grille: 'kidney', head: 'slim', tail: 'L' };
+  const paint = new THREE.MeshPhysicalMaterial({ color: 0xdfe2e6, metalness: 0.5, roughness: 0.3, clearcoat: 1 });
+  const tail = tailProto.clone();
+  const car = assemble(b, { paint, roof: paint, tail, plate: plateMat('BP 1-110') }, false, true);
+  const blueM = new THREE.MeshStandardMaterial({ color: 0x1f4fb8, roughness: 0.45, metalness: 0.2 });
+  const neon = new THREE.MeshStandardMaterial({ color: 0xd8f000, emissive: 0x3a4200, roughness: 0.5 });
+  const blueA = new THREE.MeshStandardMaterial({ color: 0x0a2aff, emissive: 0x2050ff, emissiveIntensity: 0.2, roughness: 0.3, transparent: true, opacity: 0.95 });
+  const blueB = blueA.clone();
+  const word = new THREE.MeshStandardMaterial({ map: textTex('POLIZEI', '#1f4fb8'), transparent: true, roughness: 0.4 });
+  const L = b.L, W = b.W, hw = W / 2 + 0.006, roofZ = -(b.roofF + b.roofR) / 2;
+  for (const sd of [-1, 1]) {
+    const st = box(0.012, 0.2, L * 0.86, blueM, sd * hw, 0.7, 0.05); car.add(st);
+    const ny = box(0.012, 0.06, L * 0.86, neon, sd * hw, 0.56, 0.05); car.add(ny);
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.36), word); w.position.set(sd * (hw + 0.004), 0.7, 0.35); w.rotation.y = sd * Math.PI / 2; car.add(w);
+  }
+  const hood = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.22), word); hood.rotation.x = -Math.PI / 2 + 0.12; hood.position.set(0, b.hoodH + 0.02, -(L / 2 - 0.55)); car.add(hood);
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.2), word); back.rotation.y = Math.PI; back.position.set(0, b.tailH - 0.02, L / 2 + 0.02); back.rotation.y = 0; car.add(back);
+  // light bar
+  car.add(box(1.25, 0.08, 0.32, MATS.black, 0, b.H + 0.04, roofZ));
+  const la = box(0.5, 0.11, 0.28, blueA, -0.33, b.H + 0.12, roofZ), lb = box(0.5, 0.11, 0.28, blueB, 0.33, b.H + 0.12, roofZ); car.add(la, lb);
+  car.add(box(0.18, 0.1, 0.24, MATS.black, 0, b.H + 0.12, roofZ));
+  // grille strobes
+  car.add(box(0.12, 0.05, 0.03, blueA, -0.32, b.c + 0.2, -(L / 2) - 0.01), box(0.12, 0.05, 0.03, blueB, 0.32, b.c + 0.2, -(L / 2) - 0.01));
+  car.add(shadowMesh(L, W));
+  Object.assign(car.userData, { paint, tail, blue: [blueA, blueB], isPolice: true });
+  return car;
+}
+
 export class TrafficFactory {
   constructor() {
     MATS.plate = plateMat('B AB 1234');
@@ -507,6 +469,7 @@ export class TrafficFactory {
     if (this.templates[kind]) return this.templates[kind];
     let t;
     if (kind === 'truck') t = buildTruck();
+    else if (kind === 'police') t = buildPolice();
     else {
       const sport = CARS.find((c) => c.id === kind);
       const b = sport ? sport.body : TRAFFIC_BODIES[kind];
@@ -522,7 +485,8 @@ export class TrafficFactory {
     const t = this._template(kind), u = t.userData;
     const paint = u.paint.clone(), tail = u.tail.clone(), boxM = u.boxM ? u.boxM.clone() : null;
     if (u.isTruck) { paint.color.setHex(TRUCK_COLORS[(rng() * TRUCK_COLORS.length) | 0]); boxM.color.setHex(rng() < 0.5 ? 0xe9e9e6 : TRUCK_COLORS[(rng() * TRUCK_COLORS.length) | 0]); }
-    else paint.color.setHex(TRAFFIC_COLORS[(rng() * TRAFFIC_COLORS.length) | 0]);
+    else if (!u.isPolice) paint.color.setHex(TRAFFIC_COLORS[(rng() * TRAFFIC_COLORS.length) | 0]);
+    const blue = u.blue ? u.blue.map((m) => m.clone()) : null;
     // Object3D.clone() deep-copies userData through JSON, which would serialise
     // every mesh we keep handles to, so stash the handles while cloning.
     const stash = []; t.traverse((o) => { stash.push([o, o.userData]); o.userData = {}; });
@@ -532,13 +496,14 @@ export class TrafficFactory {
     car.traverse((o) => {
       if (o.isMesh) {
         if (o.material === u.paint) o.material = paint; else if (o.material === u.tail) o.material = tail; else if (boxM && o.material === u.boxM) o.material = boxM;
+        else if (blue) { const i = u.blue.indexOf(o.material); if (i >= 0) o.material = blue[i]; }
       }
     });
     // re-link runtime handles (clone() keeps structure/order)
     const find = (src, dst, target) => { if (src === target) return dst; for (let i = 0; i < src.children.length; i++) { const r = find(src.children[i], dst.children[i], target); if (r) return r; } return null; };
     for (const w of u.wheels) wheels.push(find(t, car, w));
     for (const k of ['l', 'r']) for (const m of u.ind[k]) ind[k].push(find(t, car, m));
-    car.userData = { ...u, paint, tail, boxM, wheels, ind, front: [] };
+    car.userData = { ...u, paint, tail, boxM, blue, wheels, ind, front: [] };
     return car;
   }
 }

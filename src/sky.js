@@ -7,13 +7,13 @@ export const WEATHERS = {
   overcast: { label: 'Overcast', icon: '☁', cloud: 0.95, fog: 0.00070, rain: 0, snow: 0, storm: 0 },
   rain:     { label: 'Rain',     icon: '🌧', cloud: 1.0,  fog: 0.0016,  rain: 0.6, snow: 0, storm: 0 },
   storm:    { label: 'Storm',    icon: '⛈', cloud: 1.0,  fog: 0.0024,  rain: 1.0, snow: 0, storm: 1 },
-  mist:     { label: 'Mist',     icon: '🌫', cloud: 0.6,  fog: 0.0085,  rain: 0, snow: 0, storm: 0 },
+  mist:     { label: 'Nebel',    icon: '🌫', cloud: 0.7,  fog: 0.0105,  rain: 0, snow: 0, storm: 0 },
   snow:     { label: 'Snow',     icon: '❄', cloud: 0.95, fog: 0.0036,  rain: 0, snow: 1, storm: 0 },
 };
 const NEXT = { // plausible transitions
-  clear: ['clear', 'cloudy', 'cloudy', 'mist'], cloudy: ['clear', 'overcast', 'overcast', 'rain', 'mist'],
+  clear: ['clear', 'cloudy', 'cloudy', 'mist', 'mist'], cloudy: ['clear', 'overcast', 'rain', 'mist', 'mist'],
   overcast: ['cloudy', 'rain', 'rain', 'storm', 'snow', 'mist'], rain: ['storm', 'storm', 'overcast', 'cloudy'],
-  storm: ['rain', 'rain', 'overcast'], mist: ['clear', 'cloudy', 'overcast'], snow: ['overcast', 'cloudy', 'snow'],
+  storm: ['rain', 'rain', 'overcast', 'mist'], mist: ['clear', 'cloudy', 'overcast', 'mist'], snow: ['overcast', 'cloudy', 'snow', 'mist'],
 };
 
 const C = (h) => new THREE.Color(h);
@@ -91,7 +91,7 @@ export class Sky {
     this.weather = 'clear'; this.nextChange = 40;
     this.cur = { cloud: 0.12, fog: 0.0003, rain: 0, snow: 0, storm: 0 };
     this.wet = 0; this.snowCover = 0; this.flash = 0; this.nextBolt = 5; this.onThunder = null;
-    this.daylight = 1; this.night = 0;
+    this.daylight = 1; this.night = 0; this.fogLevel = 0;
 
     this.u = { zen: { value: C(0) }, hor: { value: C(0) }, sunCol: { value: C(0xffffff) }, sunDir: { value: new THREE.Vector3(0, 1, 0) },
       moonDir: { value: new THREE.Vector3(0, 1, 0) }, cloud: { value: 0 }, time: { value: 0 }, flash: { value: 0 }, night: { value: 0 }, dark: { value: 0 } };
@@ -133,7 +133,8 @@ export class Sky {
     // weather state machine
     if (this.weatherMode === 'dynamic') {
       this.nextChange -= dt;
-      if (this.nextChange <= 0) { const o = NEXT[this.weather]; this.weather = o[(Math.random() * o.length) | 0]; this.nextChange = 40 + Math.random() * 45; }
+      if (this.nextChange <= 0) { const o = NEXT[this.weather], dawn = this.time > 4 && this.time < 9.5;
+        this.weather = dawn && this.weather !== 'mist' && Math.random() < 0.35 ? 'mist' : o[(Math.random() * o.length) | 0]; this.nextChange = 40 + Math.random() * 45; }
     }
     const tgt = WEATHERS[this.weather], k = 1 - Math.exp(-dt / 6);
     for (const key of ['cloud', 'rain', 'snow', 'storm']) this.cur[key] += (tgt[key] - this.cur[key]) * k;
@@ -179,7 +180,13 @@ export class Sky {
     this.sun.position.copy(fromMoon ? this.u.moonDir.value : sunDir).multiplyScalar(100).add(camera.position); this.sun.target.position.copy(camera.position);
     this.hemi.color.copy(zen).lerp(hor, 0.6).lerp(_c.setScalar(1), 0.35); this.hemi.groundColor.copy(hor).multiplyScalar(0.35);
     this.hemi.intensity = amb * 1.25 + this.flash * 2.5;
-    this.scene.fog.color.copy(hor).lerp(_c.setRGB(0.8, 0.85, 1), this.flash * 0.4); this.scene.fog.density = this.cur.fog;
+    this.scene.fog.color.copy(hor).lerp(_c.setRGB(0.8, 0.85, 1), this.flash * 0.4); // fog comes in banks along the road: in Nebel you drive in and out of thick patches,
+    // and on clear mornings there are shallow banks in the low spots
+    const n = 0.5 + 0.5 * Math.sin(travel / 640 + 1.3) * Math.cos(travel / 1730 + 0.4), mistW = clamp01((this.cur.fog - 0.002) / 0.006);
+    const dawnBank = this.time > 4.5 && this.time < 9 && this.cur.rain < 0.2 ? Math.max(0, n - 0.62) / 0.38 * 0.0055 : 0;
+    const density = this.cur.fog * (1 - mistW + mistW * (0.4 + 1.25 * n * n)) + dawnBank;
+    this.fogLevel = clamp01((density - 0.0025) / 0.008);
+    this.scene.fog.density = density;
     this.scene.environmentIntensity = 0.12 + 0.75 * this.daylight * (1 - cl * 0.4);
     this.dome.position.copy(camera.position);
 
@@ -198,3 +205,4 @@ export class Sky {
   }
 }
 const _c = new THREE.Color();
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);

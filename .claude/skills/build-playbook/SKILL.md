@@ -150,6 +150,18 @@ The final message is for someone who did not watch you work.
   - Do not stack large ground planes; cut them so they never overlap.
   - Tint by multiplying cannot make a surface white; blend the albedo in the
     shader (see `World._snowy`).
+  - `group.add(x)` returns the group, not `x`: never chain `.position` or
+    `.rotation` onto it.
+  - Car bodies are solid blocks. The cockpit view needs the hollow-cabin body
+    (`buildBody(..., cabin = true)`), or the driver looks at the top of a block.
+  - Test bots must steer with damping (position and lateral speed), brake for
+    real stopping distances and obey limits, or every crash is the bot's fault.
+  - Never fake `Math.random` around world generation in tests; pass a
+    parameter instead (`_makeAccident(s, 'oil')`, `_makeRoadworks(s, -1)`).
+  - `window.__debugCam = (camera, rig) => {...}` overrides the camera for
+    screenshots; `__game.simulate(dt)` steps the game without rendering.
+  - Physics tuning has a Node test bench pattern: run the scenario many times
+    across cars and weather, report rates (spins, flips), not single runs.
+- Repo: github.com/mattydot/Autoha (branch `main`).
 - Open items: hear and tune the engine and radio on real speakers; measure
-  frame rate on a real GPU; test gamepad and touch; push to GitHub once a repo
-  exists.
+  frame rate on a real GPU; test gamepad and touch.
