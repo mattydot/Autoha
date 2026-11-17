@@ -133,7 +133,7 @@ function readInput(dt) {
   if (touchMode) { t = Math.max(t, tc.throttle); b = Math.max(b, tc.brake); if (tc.steer) s = tc.steer; }
   const gp = navigator.getGamepads ? navigator.getGamepads()[0] : null;
   if (gp) { if (Math.abs(gp.axes[0]) > 0.12) s = gp.axes[0]; t = Math.max(t, gp.buttons[7]?.value || 0, gp.buttons[0]?.value || 0); b = Math.max(b, gp.buttons[6]?.value || 0); }
-  input.throttle = t; input.brake = b; input.steer += (s - input.steer) * Math.min(1, dt * (9 + 11 * clamp(1 - veh.speed / 36, 0, 1)));   // snappier at low speed
+  input.throttle = t; input.brake = b; input.steer += (s - input.steer) * Math.min(1, dt * (14 + 8 * clamp(1 - veh.speed / 36, 0, 1)));   // snappier at low speed
 }
 
 /* ------------------------------ game flow ------------------------------ */
@@ -349,8 +349,8 @@ function updateCamera(dt, t) {
       view.headRoll += (clamp(veh.ay * 0.0035, -0.05, 0.05) - view.headRoll) * Math.min(1, dt * 5);
       _v.copy(cockpit.eye).add(view.head); _v.y += Math.sin(t * 31) * 0.0012 * vn + (Math.random() - 0.5) * 0.004 * vn * vn;
       carMesh.localToWorld(camera.position.copy(_v));
-      carMesh.getWorldQuaternion(_q); camera.quaternion.copy(_q).multiply(new THREE.Quaternion().setFromEuler(_e.set(-0.055, -input.steer * 0.06, view.headRoll, 'YXZ')));
-      const fov = 66 + 10 * vn; camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
+      carMesh.getWorldQuaternion(_q); camera.quaternion.copy(_q).multiply(new THREE.Quaternion().setFromEuler(_e.set(-0.045, -input.steer * 0.06, view.headRoll, 'YXZ')));
+      const fov = 70 + 8 * vn; camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
       if (shake > 0 && sh) camera.position.addScaledVector(_t.set(Math.random() - 0.5, Math.random() - 0.5, 0), shake * 0.15);
       camera.updateProjectionMatrix(); if (window.__debugCam) window.__debugCam(camera, rig); return;
     }

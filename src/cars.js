@@ -189,7 +189,7 @@ function buildBody(b, mats, detail, cabin = false) {
   } else {
     // roof panel
     const roof = roundedPath([[G1[0] - 0.06, b.H - 0.06], [G1[0] + 0.06, b.H + 0.02], [G2[0] - 0.06, b.H + 0.008], [G2[0] + 0.07, b.H - 0.07]], 0.03);
-    g.add(mesh(warp(extrude(roof, ghW + 0.03, 0.03, 2), tumble), mats.roof));
+    g.add(mesh(warp(extrude(roof, ghW + 0.03, 0.03, 2), tumble), cabin ? MATS.black : mats.roof));
     // side frames with window cut-outs
     const yb = Math.max(G0[1], G3[1]) + 0.07, yt = b.H - 0.085;
     const xr = (y) => lineX(G0, G1, y) + 0.13, xf = (y) => lineX(G3, G2, y) - 0.10;

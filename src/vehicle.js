@@ -67,7 +67,11 @@ export class Vehicle {
     // performance tyres, wider at the back: in the dry the car is stable and
     // understeers at the limit. Water takes the rear's margin away first, so
     // in rain and storms the tail lets go much more easily.
-    const wetLoss = clamp(1 - env.base, 0, 1), rearBias = 1.1 - wetLoss * 0.42;
+    // braking while steering for too long: weight comes off the rear and it starts to step out
+    if (inp.brake > 0.3 && Math.abs(inp.steer) > 0.45 && au > 12) this.trail = Math.min(2, (this.trail || 0) + h);
+    else this.trail = Math.max(0, (this.trail || 0) - h * 2.5);
+    const trail = clamp((this.trail - 0.4) / 1.4, 0, 1);
+    const wetLoss = clamp(1 - env.base, 0, 1), rearBias = (1.1 - wetLoss * 0.42) * (1 - 0.2 * trail);
     // game feel: extra grip at low speed (none from ~130 km/h up) so the car is nimble in traffic
     const low = clamp(1 - au / 36, 0, 1), agile = 1 + 0.35 * low;
     const muF = (muFL + muFR) / 2 * 1.05 * agile, muR = (muRL + muRR) / 2 * 1.05 * rearBias * agile;
@@ -96,15 +100,20 @@ export class Vehicle {
     // allows about 1.5x what dry tyres can hold, so yanking the wheel can
     // break traction (and on a wet road it easily does)
     // below ~130 km/h the steering gets quicker and a little sharper; above that it is unchanged
-    const dmax = clamp((1.5 + 0.6 * low) * G * wb / Math.max(au, 4) ** 2, 0.006, 0.55);
+    // plus a fixed margin (~1.4 deg at the road wheels) so high-speed steering has real authority, like a
+    // driver turning the wheel 20 degrees; enough to break traction if overdone
+    const dmax = clamp((1.5 + 0.6 * low) * G * wb / Math.max(au, 4) ** 2 + (env.steerAdd ?? 0.025 * Math.min(1, env.base * env.base)), 0.006, 0.55);
     const beta = Math.atan2(w, Math.max(au, 0.5));
     let target = inp.steer * dmax;
     if (env.assist && Math.abs(inp.steer) < 0.05 && Math.abs(beta) < 0.3 && au > 3) {
       // hands-off: a driver keeping the car straight down the road
       const rd = clamp(-this.psi * 2.2, -0.35, 0.35);
       target = clamp((rd + (rd - this.r) * 0.6) * wb / au, -dmax * 0.8, dmax * 0.8);
+    } else if (env.assist && Math.abs(inp.steer) < 0.05 && Math.abs(beta) >= 0.3 && Math.abs(beta) < 0.75 && au > 5) {
+      // hands-off in a slide: catch it with opposite lock, like a driver would
+      target = clamp(beta * 0.9 - this.r * 0.08, -0.3, 0.3);
     }
-    const rate = h * dmax / (0.15 - 0.08 * low);
+    const rate = h * Math.max(dmax, Math.abs(target)) / (0.15 - 0.08 * low);
     this.delta += clamp(target - this.delta, -rate, rate);
 
     // tyre slip angles and lateral forces
@@ -148,7 +157,7 @@ export class Vehicle {
     if (env.assist && au > 5 && Math.abs(beta) < 0.35) {
       const rRef = clamp(au * (this.delta - dR) / wb, -this.mu * G / au, this.mu * G / au);
       // limited authority (it can only brake single wheels), and it loses most of it on water
-      const auth = 0.1 * m * G * wb * clamp(1 - wetLoss * 1.6, 0.1, 1) * (env.esc ?? 1);
+      const auth = 0.1 * m * G * wb * clamp(1 - wetLoss * 1.6, 0.1, 1) * (env.esc ?? 1) * (1 - 0.55 * trail);
       Mz -= clamp((this.r - rRef) * this.I * 7 * this.mu, -auth, auth) * (1 - Math.abs(beta) / 0.35);
     }
 
