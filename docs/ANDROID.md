@@ -70,8 +70,9 @@ keytool -genkeypair -v -keystore upload.keystore -alias upload -keyalg RSA -keys
 
    With these set, the workflow builds a signed release APK and an
    `AutobahnRush.aab` app bundle (the format Google Play wants).
-3. **Tag a release**: the version name comes from the tag, the version code
-   rises with every build.
+3. **Tag a release** (push a `v*` tag, or publish a release on GitHub with a
+   new `v*` tag): the version name comes from the tag, the version code rises
+   with every build.
 
 ```bash
 git tag v1.0.1
