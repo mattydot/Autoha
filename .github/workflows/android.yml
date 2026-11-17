@@ -35,13 +35,10 @@ jobs:
           npm run build:web
           npx cap sync android
 
-      - name: Version from tag
+      - name: Version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-          else
-            echo "VERSION_NAME=1.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
-          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V="$(node -p "require('./package.json').version")"; fi
+          echo "VERSION_NAME=$V" >> "$GITHUB_ENV"
           echo "VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
 
       # Release signing is optional: add the secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
@@ -81,13 +78,18 @@ jobs:
             ${{ runner.temp }}/AutobahnRush.aab
           if-no-files-found: ignore
 
+      # A tag or a published release uploads the APK to that release. On main, a release
+      # v<package.json version> is created once, so bumping the version in package.json ships a new release.
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Autobahn Rush ${{ env.VERSION_NAME }}
-          generate_release_notes: true
-          files: |
-            ${{ runner.temp }}/AutobahnRush.apk
-            ${{ runner.temp }}/AutobahnRush.aab
-          fail_on_unmatched_files: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v$VERSION_NAME"
+          [[ "$GITHUB_REF" == refs/tags/v* ]] && TAG="$GITHUB_REF_NAME"
+          FILES="$RUNNER_TEMP/AutobahnRush.apk"; [ -f "$RUNNER_TEMP/AutobahnRush.aab" ] && FILES="$FILES $RUNNER_TEMP/AutobahnRush.aab"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [[ "$GITHUB_REF" == refs/heads/* ]]; then echo "$TAG already released; bump the version in package.json for a new release"; exit 0; fi
+            gh release upload "$TAG" $FILES --clobber
+          else
+            gh release create "$TAG" $FILES --target "$GITHUB_SHA" --title "Autobahn Rush $VERSION_NAME" --notes-file .github/release-notes.md
+          fi

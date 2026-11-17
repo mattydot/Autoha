@@ -16,8 +16,9 @@ What the app does on top of the web version:
 ## Download the APK
 
 Every push to `main` builds the app in GitHub Actions
-(`.github/workflows/android.yml`). Pushing a tag like `v1.0.1` also publishes a
-**GitHub Release** with `AutobahnRush.apk` attached:
+(`.github/workflows/android.yml`). The first build of each version (the
+`version` in `package.json`) publishes a **GitHub Release** `v<version>` with
+`AutobahnRush.apk` attached; pushing a `v*` tag does the same:
 
 1. Open the repository's **Releases** page and download `AutobahnRush.apk` on the phone.
 2. Allow your browser or file manager to install unknown apps when Android asks.
@@ -70,17 +71,9 @@ keytool -genkeypair -v -keystore upload.keystore -alias upload -keyalg RSA -keys
 
    With these set, the workflow builds a signed release APK and an
    `AutobahnRush.aab` app bundle (the format Google Play wants).
-3. **Tag a release** (push a `v*` tag, or publish a release on GitHub with a
-   new `v*` tag): the version name comes from the tag, the version code rises
-   with every build.
-
-```bash
-git tag v1.0.1
-```
-
-```bash
-git push origin v1.0.1
-```
+3. **Release**: raise `version` in `package.json` (for example to `1.0.1`) and
+   push to `main`; the workflow publishes release `v1.0.1` with the signed APK
+   and `.aab`. The version code rises with every build.
 
 4. **Play Console** (one-time USD 25 developer account): create the app, turn on
    Play App Signing, and upload the `.aab` from the release to internal testing
