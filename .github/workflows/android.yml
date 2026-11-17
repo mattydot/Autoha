@@ -25,7 +25,7 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest already has the Android SDK (ANDROID_HOME); Gradle fetches any missing platform
 
       - name: Install and sync web assets
         run: |
