@@ -1,3 +1,4 @@
+import { PACE } from './world.js';
 // Player vehicle dynamics. No three.js here, so it can be tested on its own.
 //
 // Coordinates: x is lateral (+ right), s is distance along the road (+ ahead),
@@ -165,7 +166,7 @@ export class Vehicle {
     this.vx += (FX * fx + FY * rx) / m * h; this.vs += (FX * fs + FY * rs) / m * h; this.r += Mz / this.I * h;
     if (this.speed < 0.3 && inp.throttle < 0.05) { this.vx *= 0.8; this.vs *= 0.8; this.r *= 0.8; }
     this.psi += this.r * h; if (this.psi > Math.PI) this.psi -= 2 * Math.PI; else if (this.psi < -Math.PI) this.psi += 2 * Math.PI;
-    this.x += this.vx * h; this.s += this.vs * h;
+    this.x += this.vx * h; this.s += this.vs * h * PACE;
     this.ax = FX / m; this.ay = FY / m;
 
     // telemetry for sound, smoke, skid marks
@@ -205,7 +206,7 @@ export class Vehicle {
       // up on two wheels: the sideways slide keeps pushing it over, gravity pulls it back
       const sp = this.speed, wa = Math.abs(this.w), tipA = Math.atan2(this.W, this.H), a = Math.abs(this.phi);
       if (sp > 0.01) { const d = Math.min(sp, 0.55 * G * h); this.vx -= this.vx / sp * d; this.vs -= this.vs / sp * d; }
-      this.r *= Math.exp(-h * 1.2); this.psi += this.r * h; this.x += this.vx * h; this.s += this.vs * h;
+      this.r *= Math.exp(-h * 1.2); this.psi += this.r * h; this.x += this.vx * h; this.s += this.vs * h * PACE;
       const push = clamp((wa - 6) / 6, 0, 1.8) * 3.4, fall = 4.1 * Math.sin(tipA - a);
       this.omega += this.rollDir * (push - fall) * h; this.phi += this.omega * h; this.yc = ycMin(this.phi);
       if (Math.abs(this.phi) > tipA) {                         // past the balance point: it goes over
@@ -220,7 +221,7 @@ export class Vehicle {
     const ground = this.yc <= ycMin(this.phi) + 0.04, sp = this.speed;
     if (ground && sp > 0.01) { const d = Math.min(sp, 0.6 * G * h); this.vx -= this.vx / sp * d; this.vs -= this.vs / sp * d; }
     this.r *= Math.exp(-h * (ground ? 1.6 : 0.3)); this.psi += this.r * h;
-    this.x += this.vx * h; this.s += this.vs * h;
+    this.x += this.vx * h; this.s += this.vs * h * PACE;
     const before = Math.floor(this.phi / half);
     this.phi += this.omega * h; this.vy -= G * h; this.yc += this.vy * h;
     if (Math.floor(this.phi / half) !== before && ground) {     // an edge or face hits the ground

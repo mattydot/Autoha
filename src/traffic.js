@@ -3,7 +3,7 @@
 // after a hard hit it stops driving and slides, spins and comes to rest,
 // hazard lights on, as an obstacle for everyone else.
 import * as THREE from 'three';
-import { LANES, ROAD } from './world.js';
+import { LANES, ROAD, PACE, visYaw } from './world.js';
 import { TrafficFactory, TRAFFIC_KINDS, EVERYDAY, MATS } from './cars.js';
 const EVERY_SUM = EVERYDAY.reduce((a, [, w]) => a + w, 0);
 function everyday() { let r = Math.random() * EVERY_SUM; for (const [k, w] of EVERYDAY) if ((r -= w) < 0) return k; return 'sedan'; }
@@ -115,12 +115,12 @@ export class Traffic {
       const lim = world.limitAt(c.s);
       let vt = (lim ? Math.min(c.vd, (lim + 6) * KMH * (c.kind === 'truck' ? 0.7 : 1)) : c.vd) * wetSlow;
       vt = Math.max(vt, lead === 0 ? 0 : 50 * KMH);
-      const safe = 6 + c.vs * 0.9;
+      const safe = (6 + c.vs * 0.9) * PACE;
       if (lead !== null && gap < safe * 1.6) vt = Math.min(vt, gap < safe ? lead * Math.max(0, gap / safe) : lead);
-      if (lead === 0 && gap < 12) vt = 0;
+      if (lead === 0 && gap < 12 * PACE) vt = 0;
       const acc = clamp((vt - c.vs) * 1.2, gap < 8 ? -9 : -6, c.kind === 'truck' ? 0.6 : 2.2);
       c.vs = Math.max(0, c.vs + acc * dt); c.brake = acc < -1.2 ? 1 : 0;
-      c.s += c.vs * dt;
+      c.s += c.vs * dt * PACE;
 
       // --- lane changes -----------------------------------------------------
       const x0 = c.x;
@@ -132,7 +132,7 @@ export class Traffic {
         if (c.hitT > 0) c.hitT -= dt;
         c.x += (LANES[c.lane] - c.x) * Math.min(1, dt * 1.5);                 // drift back after a nudge
         const blocked = lead !== null && gap < safe * 1.5 && lead < c.vd - 3;
-        const playerNear = (lane, back, fwd) => active && Math.abs(LANES[lane] - player.x) < 2.9 && player.s > c.s - back - (player.v - c.vs) * 2.2 && player.s < c.s + fwd;
+        const playerNear = (lane, back, fwd) => active && Math.abs(LANES[lane] - player.x) < 2.9 && player.s > c.s - back - (player.v - c.vs) * 2.2 * PACE && player.s < c.s + fwd;
         const policeBehind = police.some((p) => p.s < c.s && c.s - p.s < 90 && Math.abs(p.x - c.x) < 1.8 && p.vs > c.vs);
         let to = -1;
         if (dClose < 450) { // must merge out of a closed lane
@@ -158,7 +158,7 @@ export class Traffic {
     }
     for (const c of this.cars) if (c.crashed) { for (const i of c.mesh.userData.ind.l) i.visible = hazard; for (const i of c.mesh.userData.ind.r) i.visible = hazard; }
 
-    for (const c of this.oncoming) { c.s -= c.vs * dt; c.mesh.position.z = -c.s; const spin = c.vs * dt / c.mesh.userData.wheelR; for (const w of c.mesh.userData.wheels) w.rotation.z -= spin;
+    for (const c of this.oncoming) { c.s -= c.vs * dt * PACE; c.mesh.position.z = -c.s; const spin = c.vs * dt * PACE / c.mesh.userData.wheelR; for (const w of c.mesh.userData.wheels) w.rotation.z -= spin;
       c.mesh.userData.tail.emissiveIntensity = 0.3 + night * 1.5; }
 
     // despawn
@@ -173,20 +173,20 @@ export class Traffic {
   _slide(c, dt) {
     const sp = Math.hypot(c.vx, c.vs);
     if (sp > 0.05) { const d = Math.min(sp, 7.5 * dt); c.vx -= c.vx / sp * d; c.vs -= c.vs / sp * d; } else { c.vx = c.vs = 0; c.stopped = true; }
-    c.r *= Math.exp(-dt * 1.8); c.psi += c.r * dt; c.x += c.vx * dt; c.s += c.vs * dt;
+    c.r *= Math.exp(-dt * 1.8); c.psi += c.r * dt; c.x += c.vx * dt; c.s += c.vs * dt * PACE;
     const b = this.world.bounds(c.s), hw = (Math.abs(c.L * Math.sin(c.psi)) + Math.abs(c.W * Math.cos(c.psi))) / 2;
     if (c.x + hw > b.max) { c.x = b.max - hw; c.vx = -Math.abs(c.vx) * 0.2; c.r *= 0.6; }
     if (c.x - hw < b.min) { c.x = b.min + hw; c.vx = Math.abs(c.vx) * 0.2; c.r *= 0.6; }
     c.lane = LANES.reduce((best, l, i) => (Math.abs(l - c.x) < Math.abs(LANES[best] - c.x) ? i : best), 0); c.toLane = c.lane;
-    c.brake = 1; c.mesh.position.set(c.x, 0, -c.s); c.mesh.rotation.y = -c.psi;
+    c.brake = 1; c.mesh.position.set(c.x, 0, -c.s); c.mesh.rotation.y = -visYaw(c.psi);
     const spin = c.vs * dt / c.mesh.userData.wheelR * 0.2; for (const w of c.mesh.userData.wheels) w.rotation.z -= spin;
     c.mesh.userData.tail.emissiveIntensity = 7;
   }
 
   _visual(c, dt, night, blink, sky) {
     const m = c.mesh, u = m.userData;
-    m.position.set(c.x, 0, -c.s); m.rotation.y = -c.psi;
-    const spin = c.vs * dt / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
+    m.position.set(c.x, 0, -c.s); m.rotation.y = -visYaw(c.psi);
+    const spin = c.vs * dt * PACE / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
     u.tail.emissiveIntensity = c.brake ? 7 : 0.25 + night * 1.6 + sky.cur.rain * 0.8;
     for (const i of u.ind.l) i.visible = c.ind < 0 && blink; for (const i of u.ind.r) i.visible = c.ind > 0 && blink;
   }

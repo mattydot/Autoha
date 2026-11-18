@@ -1,6 +1,7 @@
 // Crash and tyre effects: skid marks, flying debris, tyre smoke, sparks.
 // Everything lives in road coordinates (inside world.frame): x, y, z = -s.
 import * as THREE from 'three';
+import { PACE } from './world.js';
 
 const pointsVert = /* glsl */`
 attribute float size; attribute float alpha; attribute vec3 tint;
@@ -99,14 +100,14 @@ export class Fx {
     for (let i = 0; i < this.nDeb; i++) {
       const d = this.deb[i]; if (d.life <= 0) continue;
       d.age += dt; if (d.age > d.life) { d.life = 0; this.debMesh.setMatrixAt(i, this._m.makeScale(0, 0, 0)); any = true; continue; }
-      d.vy -= 9.81 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.s += d.vs * dt;
+      d.vy -= 9.81 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.s += d.vs * dt * PACE;
       if (d.y < d.size / 2) { d.y = d.size / 2; d.vy = Math.abs(d.vy) * 0.25; d.vx *= 0.6; d.vs *= 0.6; d.w *= 0.5; if (Math.abs(d.vy) < 0.5) { d.vy = 0; d.vx *= 0.9; d.vs *= 0.9; } }
       d.rx += d.w * dt; d.ry += d.w * 0.7 * dt;
       this._q.setFromEuler(this._e.set(d.rx, d.ry, 0));
       this.debMesh.setMatrixAt(i, this._m.compose(this._v.set(d.x, d.y, -d.s), this._q, this._sc.set(d.size, d.size * 0.35, d.size * 1.4))); any = true;
     }
     if (any) this.debMesh.instanceMatrix.needsUpdate = true;
-    this.smoke.update(dt, (p, t) => { p.x += p.vx * t; p.y += p.vy * t; p.s += p.vs * t; p.vx *= 0.97; p.vs *= 0.97; p.size += p.grow * t; });
-    this.sparks.update(dt, (p, t) => { p.vy -= 9.81 * t; p.x += p.vx * t; p.y = Math.max(0.02, p.y + p.vy * t); p.s += p.vs * t; });
+    this.smoke.update(dt, (p, t) => { p.x += p.vx * t; p.y += p.vy * t; p.s += p.vs * t * PACE; p.vx *= 0.97; p.vs *= 0.97; p.size += p.grow * t; });
+    this.sparks.update(dt, (p, t) => { p.vy -= 9.81 * t; p.x += p.vx * t; p.y = Math.max(0.02, p.y + p.vy * t); p.s += p.vs * t * PACE; });
   }
 }

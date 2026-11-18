@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SpeedStreaks, RadialBlurShader } from './speedfx.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CARS, buildPlayerCar, setCarColor, MATS } from './cars.js';
-import { World, LANES } from './world.js';
+import { World, LANES, PACE, visYaw } from './world.js';
 import { Sky, WEATHERS } from './sky.js';
 import { Traffic } from './traffic.js';
 import { Police } from './police.js';
@@ -194,7 +194,7 @@ function gameOver() {
   const best = Math.max(settings.best, Math.round(run.score)), isBest = run.score > settings.best && run.score > 0; settings.best = best; save();
   $('o-kicker').textContent = run.end || 'TOTALSCHADEN';
   $('o-score').textContent = Math.round(run.score).toLocaleString('en'); $('o-best').textContent = isBest ? 'NEW BEST' : 'BEST ' + best.toLocaleString('en');
-  $('o-dist').textContent = (veh.s / 1000).toFixed(1); $('o-top').textContent = fmtSpeed(run.top); $('o-unit').textContent = 'top ' + (settings.units === 'mph' ? 'mph' : 'km/h');
+  $('o-dist').textContent = (veh.s / PACE / 1000).toFixed(1); $('o-top').textContent = fmtSpeed(run.top); $('o-unit').textContent = 'top ' + (settings.units === 'mph' ? 'mph' : 'km/h');
   $('o-near').textContent = run.near; $('o-fines').textContent = run.fines; go('over');
 }
 function endRun(reason) { if (run.wreckT > 0) return; run.end = reason; run.wreckT = 0.001; }
@@ -319,10 +319,10 @@ function updateCar(dt) {
   view.pitch += (clamp(veh.ax, -12, 8) * 0.0032 - view.pitch) * Math.min(1, dt * 6);
   view.lean += (clamp(-veh.ay, -12, 12) * 0.0045 - view.lean) * Math.min(1, dt * 5);
   rig.position.set(veh.x, veh.rolling ? veh.yc : H / 2, -(veh.s - world.s));
-  rig.rotation.set(veh.rolling ? 0 : view.pitch, -veh.psi, -(veh.phi + (veh.rolling ? 0 : view.lean)));
+  rig.rotation.set(veh.rolling ? 0 : view.pitch, -visYaw(veh.psi), -(veh.phi + (veh.rolling ? 0 : view.lean)));
   rig.updateMatrixWorld(true);
-  shadow.position.set(veh.x, 0.02, rig.position.z); shadow.rotation.set(-Math.PI / 2, 0, -veh.psi); shadow.material.opacity = 0.75 * clamp(1 - (veh.yc - H / 2) / 3, 0, 1);
-  const spin = veh.u * dt / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
+  shadow.position.set(veh.x, 0.02, rig.position.z); shadow.rotation.set(-Math.PI / 2, 0, -visYaw(veh.psi)); shadow.material.opacity = 0.75 * clamp(1 - (veh.yc - H / 2) / 3, 0, 1);
+  const spin = veh.u * dt * PACE / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
   for (const f of u.front) f.rotation.y = -input.steer * 0.42 * clamp(1 - veh.speed / 50, 0.12, 1);
   const braking = mode === 'play' && (input.brake > 0.1 || veh.wrecked);
   u.tail.emissiveIntensity = braking ? 8 : 0.35 + sky.night * 2 + sky.cur.rain;
@@ -367,7 +367,7 @@ function updateCamera(dt, t) {
   if (mode === 'play' || mode === 'paused' || mode === 'over') {
     camX += (veh.x - camX) * Math.min(1, dt * 6);
     // the chase camera swings round with the car, but lags behind spins
-    const target = veh.rolling ? view.camYaw : clamp(veh.psi, -1.2, 1.2) * 0.85;
+    const target = veh.rolling ? view.camYaw : clamp(visYaw(veh.psi), -1.2, 1.2) * 0.85;
     view.camYaw += (target - view.camYaw) * Math.min(1, dt * (Math.abs(veh.r) > 1 ? 1.2 : 3));
     const cy = Math.cos(view.camYaw), syw = Math.sin(view.camYaw);
     if (inCar) {
@@ -414,7 +414,7 @@ function updateHUD() {
   const vk = veh.vs * KMH, limit = run.limit;
   setText('h-speed', fmtSpeed(veh.speed)); setText('h-unit', settings.units === 'mph' ? 'mph' : 'km/h'); setText('h-gear', veh.gear);
   $('h-rpm').style.width = (veh.rpm / veh.spec.redline * 100).toFixed(1) + '%';
-  setText('h-score', Math.round(run.score).toLocaleString('en')); setText('h-dist', (veh.s / 1000).toFixed(1) + ' km');
+  setText('h-score', Math.round(run.score).toLocaleString('en')); setText('h-dist', (veh.s / PACE / 1000).toFixed(1) + ' km');
   setText('h-combo', run.combo > 1 ? `COMBO ×${run.combo}` : '');
   const d = $('h-damage'); d.style.width = (100 - veh.damage) + '%'; d.style.background = veh.damage > 66 ? '#ff5a4f' : veh.damage > 33 ? '#ffd60a' : '#4ade80';
   const sign = $('h-sign'), over = limit && vk > limit + 5, cls = 'sign' + (limit ? '' : ' free') + (over ? ' over' : '');
@@ -542,7 +542,7 @@ function simulate(dt) {
   if (mode === 'play') { physics(dt, true); rules(dt); thr = veh.thrAudio; engineOn = !veh.wrecked; }
   else if (mode === 'over') { physics(dt, false); engineOn = false; }
   else { // menu / garage: the car idles or cruises for the camera
-    const tv = mode === 'garage' ? 0 : 118 / KMH; veh.vs += (tv - veh.vs) * Math.min(1, dt * 0.9); veh.s += veh.vs * dt; veh.vx = 0;
+    const tv = mode === 'garage' ? 0 : 118 / KMH; veh.vs += (tv - veh.vs) * Math.min(1, dt * 0.9); veh.s += veh.vs * dt * PACE; veh.vx = 0;
     veh.x += (LANES[1] - veh.x) * Math.min(1, dt * 2); veh.psi = 0; veh.r = 0; veh.ax = 0; veh.ay = 0; veh.damage = 0; veh.phi = 0; veh.rolling = false; veh.wrecked = false; veh.skid = 0; input.steer = 0; run.wreckT = 0;
     const spec = veh.spec;
     if (mode === 'garage') { const target = revHeld ? spec.redline * 0.97 : spec.idle; veh.rpm += (target - veh.rpm) * Math.min(1, dt * (revHeld ? 2.6 : 2.0)); thr = revHeld ? 1 : 0; }

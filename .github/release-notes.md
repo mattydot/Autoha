@@ -1,7 +1,6 @@
 Download **AutobahnRush.apk** below, open it on your Android phone and allow installing apps from this source when asked.
 
-- Speed feels much faster: 130 km/h now feels like 200, 200 like 300
-- At speed the chase camera drops back and lower, the view widens, wind streaks rush past and the screen edges blur
-- Louder wind roar and more camera shake at high speed (shake can be turned off in Settings)
+- Everything goes by 1.5 times faster: the speedometer, top speeds and effects are unchanged, but the road, traffic and Polizei rush past much quicker
+- Braking distances in the road grow to match, so brake earlier
 
 If no release key is configured yet (see docs/ANDROID.md), the APK is debug-signed and an update may need the old version uninstalled first.

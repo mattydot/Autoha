@@ -4,7 +4,7 @@
 // in: one behind, one in front, one on each side, but never on a side where
 // there is no lane. Box the player in and bring them to a stop and it is
 // over. Outrun them, or keep away until they give up, and you are free.
-import { LANES } from './world.js';
+import { LANES, PACE, visYaw } from './world.js';
 import { POLICE_SIGN } from './cars.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -88,9 +88,9 @@ export class Police {
       const sl = c.slot, ts = player.s + sl.ds, d = ts - c.s;
       tx = LANES[sl.lane];
       if (d > 90) vt = POLICE_VMAX;                                             // catching up
-      else if (d < -40 && c.wait) vt = Math.max(player.v < 8 ? 0 : 6, player.v - clamp(-d * 0.07, 6, 38));   // up ahead: let the player catch up
+      else if (d < -40 && c.wait) vt = Math.max(player.v < 8 ? 0 : 6, player.v - clamp(-d / PACE * 0.07, 6, 38));   // up ahead: let the player catch up
       // close in no faster than they could still brake (~5 m/s²) to hold position
-      else vt = clamp(player.v + Math.sign(d) * Math.min(Math.sqrt(2 * 2.5 * Math.abs(d)), Math.abs(d) * 1.0, d > 0 ? 12 : 12), 0, POLICE_VMAX);
+      else vt = clamp(player.v + Math.sign(d) * Math.min(Math.sqrt(2 * 2.5 * Math.abs(d) / PACE), Math.abs(d) / PACE, d > 0 ? 12 : 12), 0, POLICE_VMAX);
       // in front of the player: brake gently and slow them down
       if (sl.name === 'front' && d < 6 && d > -10 && Math.abs(c.x - player.x) < 1.6) vt = Math.max(0, player.v - 3.5);
       if (d > -40) c.wait = false;
@@ -112,11 +112,12 @@ export class Police {
     let safe = 3 + c.vs * 0.25;
     const pg = player.s - player.L / 2 - (c.s + c.L / 2);
     if (pg > -2 && pg < gap && Math.abs(player.x - c.x) < (player.footW + c.W) / 2 + 0.1) { gap = pg; lead = player.v; safe = 2.5 + c.vs * 0.14; }   // they sit right on your bumper
+    gap /= PACE;   // in speedometer metres: the road goes by PACE times faster, so they need that much more room
     if (lead !== null && gap < safe * 2) vt = Math.min(vt, gap < safe ? lead * Math.max(0, gap / safe) : lead + 2);
     // closing too fast for the gap: brake now
     if (lead !== null && c.vs > lead && (c.vs - lead) ** 2 / (2 * Math.max(0.5, gap - safe * 0.6)) > 3.5) vt = Math.min(vt, lead - 2);
     const acc = clamp((vt - c.vs) * 4, gap < 8 ? -14 : -11, c.vs < 50 ? 9 : c.vs < 75 ? 6 : 3.5);
-    c.vs = Math.max(0, c.vs + acc * dt); c.brake = acc < -2 ? 1 : 0; c.s += c.vs * dt;
+    c.vs = Math.max(0, c.vs + acc * dt); c.brake = acc < -2 ? 1 : 0; c.s += c.vs * dt * PACE;
     // sideways: move over only when the target lane is clear next to us
     const x0 = c.x, dir = Math.sign(tx - c.x);
     if (dir) {
@@ -126,7 +127,7 @@ export class Police {
       if (clear) c.x += clamp(tx - c.x, -4.2 * dt, 4.2 * dt);
     }
     c.lane = LANES.reduce((b, l, i) => (Math.abs(l - c.x) < Math.abs(LANES[b] - c.x) ? i : b), 0); c.toLane = c.lane;
-    c.vx = (c.x - x0) / Math.max(dt, 1e-4); c.psi = Math.atan2(c.vx, Math.max(c.vs, 5)); c.r = 0; c.ind = 0;
+    c.vx = (c.x - x0) / Math.max(dt, 1e-4); c.psi = Math.atan2(c.vx, Math.max(c.vs, 5) * PACE); c.r = 0; c.ind = 0;
     // blue lights: double flash, alternating sides
     const u = c.mesh.userData; if (u.blue) { const k = ((performance.now() / 60) | 0) % 8; u.blue[0].emissiveIntensity = !c.leaving && (k === 0 || k === 2) ? 10 : 0.2; u.blue[1].emissiveIntensity = !c.leaving && (k === 4 || k === 6) ? 10 : 0.2; }
   }

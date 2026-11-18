@@ -5,6 +5,11 @@
 import * as THREE from 'three';
 import * as P from './props.js';
 
+// Pace: the world goes by this much faster than the speedometer says. Everything moves PACE x vs metres
+// along the road per second (player, traffic, police, debris); speed numbers, top speeds, lateral motion
+// and steering stay as they are. Rendered headings are squashed to match the stretched paths.
+export const PACE = 1.5;
+export const visYaw = (psi) => Math.atan2(Math.sin(psi), PACE * Math.cos(psi));
 export const LANES = [-3.75, 0, 3.75];           // left (fast) -> right (slow)
 export const ROAD = { left: -6.05, right: 8.2, mirror: -15.4 };
 const LEN = 2400, AHEAD = 1700;                  // visible road length / part ahead of the player
