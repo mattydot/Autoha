@@ -26,29 +26,50 @@ def road(im, S, cx, horizon, bottom, top_half, bot_half):
         d.rectangle([cx - w / 2 * S, y * S, cx + w / 2 * S, min(bottom, y + L) * S], fill=(238, 236, 226))
         y += L * 1.9; k += 1
 
-def sign(im, S, cx, cy, w, h, speedlines=True):
+def car(im, S, cx, cy, w):
+    """A low sports car seen from behind: wide hips, glowing LED light bar, quad pipes, rear wing.
+    cx, cy: centre of the body in icon units; w: overall width."""
+    k = w / 58                       # sizes below are for a 58-unit-wide car
+    X = lambda x: (cx + x * k) * S; Y = lambda y: (cy + y * k) * S
+    sh = Image.new('RGBA', im.size, (0, 0, 0, 0)); ImageDraw.Draw(sh).ellipse([X(-32), Y(12), X(32), Y(20)], fill=(0, 0, 0, 210))
+    im.alpha_composite(sh.filter(ImageFilter.GaussianBlur(1.2 * k * S)))
     d = ImageDraw.Draw(im)
-    x0, y0, x1, y1 = (cx - w / 2) * S, (cy - h / 2) * S, (cx + w / 2) * S, (cy + h / 2) * S
-    sh = Image.new('RGBA', im.size, (0, 0, 0, 0)); ImageDraw.Draw(sh).rounded_rectangle([x0, y0 + 1.2 * S, x1, y1 + 1.2 * S], radius=3.4 * S, fill=(0, 0, 0, 140))
-    im.alpha_composite(sh.filter(ImageFilter.GaussianBlur(1.2 * S)))
-    d.rounded_rectangle([x0, y0, x1, y1], radius=3.4 * S, fill=(245, 245, 240))
-    p = 1.1 * S
-    d.rounded_rectangle([x0 + p, y0 + p, x1 - p, y1 - p], radius=2.6 * S, fill=(16, 78, 164))
-    fa = ImageFont.truetype(FONT, int(h * 0.62 * S)); fr = ImageFont.truetype(FONT, int(h * 0.46 * S))
-    wa = d.textlength('A', font=fa); wr = d.textlength('R', font=fr); gap = 0.08 * h * S; tx = cx * S - (wa + gap + wr) / 2
-    base = cy * S + h * 0.24 * S
-    d.text((tx, base), 'A', font=fa, fill=(255, 255, 255), anchor='ls')
-    d.text((tx + wa + gap, base), 'R', font=fr, fill=(255, 210, 0), anchor='ls')
-    if speedlines:
-        for i, (dx, ln) in enumerate([(4, 10), (0, 14), (2, 10)]):
-            yy = (cy + h / 2 + 3 + i * 3.2) * S; xe = (cx - w / 2 + 12 - dx) * S
-            d.rounded_rectangle([xe - ln * S, yy - 0.7 * S, xe, yy + 0.7 * S], radius=0.7 * S, fill=(255, 210, 0))
+    for x0, x1 in ((-27, -19), (19, 27)):                                                    # tyres
+        d.rounded_rectangle([X(x0), Y(4), X(x1), Y(17)], radius=1.6 * k * S, fill=(14, 14, 16))
+    d.polygon([(X(-16), Y(-17)), (X(16), Y(-17)), (X(22), Y(-5)), (X(-22), Y(-5))], fill=(205, 212, 222))      # cabin
+    d.polygon([(X(-14), Y(-15.5)), (X(14), Y(-15.5)), (X(19.5), Y(-6)), (X(-19.5), Y(-6))], fill=(22, 28, 40))  # rear glass
+    d.polygon([(X(-12), Y(-14.5)), (X(-4), Y(-14.5)), (X(-10), Y(-7))], fill=(58, 72, 96))                    # glare
+    d.polygon([(X(-22), Y(-6)), (X(22), Y(-6)), (X(28), Y(-1)), (X(29), Y(10)), (X(26), Y(13)), (X(-26), Y(13)), (X(-29), Y(10)), (X(-28), Y(-1))], fill=(214, 220, 228))
+    d.polygon([(X(-29), Y(5)), (X(29), Y(5)), (X(29), Y(10)), (X(26), Y(13)), (X(-26), Y(13)), (X(-29), Y(10))], fill=(168, 176, 188))   # lower shading
+    d.line([(X(-27), Y(-1.6)), (X(27), Y(-1.6))], fill=(248, 249, 252), width=max(1, int(0.8 * k * S)))       # shoulder line
+    for sx in (-1, 1): d.rectangle([X(sx * 13 - 1), Y(-10), X(sx * 13 + 1), Y(-5)], fill=(30, 32, 36))          # wing stands
+    d.rounded_rectangle([X(-25), Y(-12.5), X(25), Y(-9.5)], radius=0.9 * k * S, fill=(30, 32, 36))             # wing
+    d.rounded_rectangle([X(-21), Y(7.5), X(21), Y(13)], radius=1.2 * k * S, fill=(26, 27, 31))                 # diffuser
+    for x in (-15, -10, 10, 15):
+        d.ellipse([X(x - 2.1), Y(8.3), X(x + 2.1), Y(12.3)], fill=(150, 155, 162)); d.ellipse([X(x - 1.3), Y(9.1), X(x + 1.3), Y(11.5)], fill=(12, 12, 14))
+    glow = Image.new('RGBA', im.size, (0, 0, 0, 0))
+    ImageDraw.Draw(glow).rounded_rectangle([X(-28), Y(0), X(28), Y(3.6)], radius=1.4 * k * S, fill=(255, 30, 40, 255))
+    im.alpha_composite(glow.filter(ImageFilter.GaussianBlur(2.4 * k * S)))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([X(-27), Y(0.5), X(27), Y(3.1)], radius=1.2 * k * S, fill=(255, 40, 48))                # LED light bar
+    d.rounded_rectangle([X(-25.5), Y(1.3), X(25.5), Y(2.2)], radius=0.5 * k * S, fill=(255, 175, 175))
+
+def speedlines(im, S, cx, cy, spread):
+    d = ImageDraw.Draw(im)
+    for sx in (-1, 1):
+        for dy, ln in ((-5, 8), (0, 12), (5, 8)):
+            a = cx + sx * spread; b = a + sx * ln
+            d.rounded_rectangle([min(a, b) * S, (cy + dy - 0.6) * S, max(a, b) * S, (cy + dy + 0.6) * S], radius=0.6 * S, fill=(255, 210, 0, 230))
+
+def sun(im, S, cx, cy, r):
+    g = Image.new('RGBA', im.size, (0, 0, 0, 0)); ImageDraw.Draw(g).ellipse([(cx - r) * S, (cy - r) * S, (cx + r) * S, (cy + r) * S], fill=(255, 140, 60, 160))
+    im.alpha_composite(g.filter(ImageFilter.GaussianBlur(r * 0.5 * S)))
 
 def adaptive_layers(px):
-    """108dp adaptive icon: background (gradient + road, full bleed) and foreground (sign, inside the 66dp safe zone)."""
+    """108dp adaptive icon: background (dusk sky, sun glow, road; full bleed) and foreground (the car, inside the 66dp safe zone)."""
     S = px / 108
-    bg = gradient(px, px); road(bg, S, px / 2, 64, 112, 4, 62)
-    fg = Image.new('RGBA', (px, px), (0, 0, 0, 0)); sign(fg, S, 54, 47, 40, 22)
+    bg = gradient(px, px, (12, 14, 30), (70, 30, 52)); sun(bg, S, 54, 46, 24); road(bg, S, px / 2, 46, 112, 3, 62)
+    fg = Image.new('RGBA', (px, px), (0, 0, 0, 0)); car(fg, S, 54, 58, 56)
     return bg, fg
 
 def full_icon(px, shape='square'):
@@ -79,8 +100,8 @@ for f in glob.glob(f'{RES}/drawable*/splash.png'):
 os.makedirs('docs/play', exist_ok=True)
 full_icon(512, 'full').convert('RGB').save('docs/play/icon-512.png')
 full_icon(512, 'full').convert('RGB').save('icons/maskable-512.png'); full_icon(512, 'square').save('icons/icon-512.png'); full_icon(192, 'square').save('icons/icon-192.png')
-W, H = 1024, 500; S = H / 108; fgx = gradient(W, H); road(fgx, S, W * 0.72, 40, 112, 3, 70)
-sign(fgx, S, 0.72 * W / S, 30, 30, 16, speedlines=False)
+W, H = 1024, 500; S = H / 108; fgx = gradient(W, H, (12, 14, 30), (70, 30, 52)); sun(fgx, S, 0.72 * W / S, 40, 30); road(fgx, S, W * 0.72, 40, 112, 3, 70)
+car(fgx, S, 0.72 * W / S, 72, 46)
 d = ImageDraw.Draw(fgx); ft = ImageFont.truetype(FONT, 92); fs = ImageFont.truetype(FONT, 34)
 d.text((60, 170), 'AUTOBAHN', font=ft, fill=(255, 255, 255)); d.text((60, 262), 'RUSH', font=ft, fill=(255, 210, 0))
 d.text((64, 380), 'No speed limit. Mind the Polizei.', font=fs, fill=(200, 204, 214))
