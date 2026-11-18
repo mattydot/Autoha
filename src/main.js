@@ -3,6 +3,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { SpeedStreaks, RadialBlurShader } from './speedfx.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CARS, buildPlayerCar, setCarColor, MATS } from './cars.js';
 import { World, LANES } from './world.js';
@@ -35,20 +37,21 @@ const camera = new THREE.PerspectiveCamera(60, 1, 0.3, 6000);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-let composer = null, bloom = null;
+let composer = null, bloom = null, blurPass = null;
 let autoQ = isTouch ? 'medium' : 'high';
 function setupQuality() {
   const q = settings.quality === 'auto' ? autoQ : settings.quality;
   const dpr = Math.min(window.devicePixelRatio || 1, isTouch ? (q === 'high' ? 1.75 : q === 'medium' ? 1.3 : 1) : (q === 'high' ? 2 : q === 'medium' ? 1.5 : 1));
   renderer.setPixelRatio(dpr); renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  if (composer) { composer.dispose(); composer = null; }
+  if (composer) { composer.dispose(); composer = null; blurPass = null; }
   if (q !== 'low') {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: q === 'high' ? 4 : 2 });
     composer = new EffectComposer(renderer, rt);
     composer.addPass(new RenderPass(scene, camera));
     bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.55, 0.7, 0.9); composer.addPass(bloom);
+    blurPass = new ShaderPass(RadialBlurShader); blurPass.enabled = false; composer.addPass(blurPass);
     composer.addPass(new OutputPass());
   }
 }
@@ -62,6 +65,8 @@ const police = new Police(); traffic.police = police;
 const audio = new GameAudio();
 const cockpit = new Cockpit();
 const fx = new Fx(world);
+const streaks = new SpeedStreaks(world.frame);
+const speedVig = document.getElementById('speedvig');
 sky.onThunder = (d) => audio.thunder(d);
 
 const spot = new THREE.SpotLight(0xfff0d8, 0, 260, 0.3, 0.95, 1.4);
@@ -73,7 +78,8 @@ const rig = new THREE.Group(); rig.rotation.order = 'YXZ'; scene.add(rig);
 let carMesh = null, shadow = null;
 const veh = new Vehicle(CARS[0]);
 const run = { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0 };
-const view = { pitch: 0, lean: 0, camYaw: 0, head: new THREE.Vector3(), headRoll: 0 };
+const view = { pitch: 0, lean: 0, camYaw: 0, head: new THREE.Vector3(), headRoll: 0, pull: 0, rush: 0 };
+const SPEED_FEEL = 1.5;
 let mode = 'menu', prevScreen = 'main', camMode = +settings.cam || 0, shake = 0, orbit = 0.75, orbitV = 0, revHeld = false, flashT = 0, camX = 0, touchMode = isTouch;
 
 function setCar(i) {
@@ -347,7 +353,13 @@ const D2R = Math.PI / 180;
 function viewFov(v) { const a = camera.aspect; if (a >= 1) return v; const h = 2 * Math.atan(Math.tan(v * D2R / 2) * 1.78) * 0.62; return Math.min(96, 2 * Math.atan(Math.tan(h / 2) / a) / D2R); }
 function updateCamera(dt, t) {
   const portrait = camera.aspect < 1;
-  const vn = clamp(veh.speed / 110, 0, 1.2), sh = settings.shake === '1' ? 1 : 0, pz = rig.position.z;
+  // speed feel: every speed cue (field of view, camera pull-back, shake, streaks, blur) acts as if the car were ~1.5x faster
+  const vf = veh.speed * SPEED_FEEL, vn = clamp(vf / 110, 0, 1.3), sh = settings.shake === '1' ? 1 : 0, pz = rig.position.z;
+  const rush = mode === 'play' ? clamp((vf - 45) / 75, 0, 1) : 0;    // 0 below ~110 km/h, 1 from ~290 km/h
+  view.rush += (rush - view.rush) * Math.min(1, dt * 2);
+  streaks.update(veh, veh.speed, view.rush * 0.9);
+  if (blurPass) { blurPass.uniforms.strength.value = view.rush * view.rush * 1.6; blurPass.enabled = view.rush > 0.03; }
+  speedVig.style.opacity = (view.rush * 0.85).toFixed(3);
   shake = Math.max(0, shake - dt * 1.4);
   const inCar = camMode === 2 && (mode === 'play' || mode === 'paused') && !veh.rolling;
   cockpit.setVisible(inCar); $('hud').classList.toggle('incar', inCar);
@@ -363,20 +375,23 @@ function updateCamera(dt, t) {
       view.head.x += (clamp(veh.ay * -0.004, -0.05, 0.05) - view.head.x) * Math.min(1, dt * 6);
       view.head.z += (clamp(veh.ax * 0.003, -0.04, 0.03) - view.head.z) * Math.min(1, dt * 6);
       view.headRoll += (clamp(veh.ay * 0.0035, -0.05, 0.05) - view.headRoll) * Math.min(1, dt * 5);
-      _v.copy(cockpit.eye).add(view.head); _v.y += Math.sin(t * 31) * 0.0012 * vn + (Math.random() - 0.5) * 0.004 * vn * vn;
+      _v.copy(cockpit.eye).add(view.head); _v.y += Math.sin(t * 31) * 0.002 * vn + (Math.random() - 0.5) * 0.007 * vn * vn * vn * sh;
       carMesh.localToWorld(camera.position.copy(_v));
       carMesh.getWorldQuaternion(_q); camera.quaternion.copy(_q).multiply(new THREE.Quaternion().setFromEuler(_e.set(-0.045, -input.steer * 0.06, view.headRoll, 'YXZ')));
-      const fov = viewFov(70 + 8 * vn); camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
+      const fov = viewFov(68 + 16 * vn * vn); camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
       if (shake > 0 && sh) camera.position.addScaledVector(_t.set(Math.random() - 0.5, Math.random() - 0.5, 0), shake * 0.15);
       camera.updateProjectionMatrix(); if (window.__debugCam) window.__debugCam(camera, rig); return;
     }
-    const back = (camMode === 0 ? 6.3 - vn * 0.5 : 10.5) + (portrait ? 1.6 : 0), up = (camMode === 0 ? 2.0 + vn * 0.15 : 3.6) + (portrait ? 0.7 : 0);
+    // at speed the camera drops back and a little lower behind the car while the view widens: the road rushes at you
+    const pull = Math.min(1.2, vn) ** 2 * (camMode === 0 ? 1.9 : 2.4);
+    view.pull += (pull - view.pull) * Math.min(1, dt * (pull > view.pull ? 1.1 : 2.5));      // eases back under acceleration, snaps in when braking
+    const back = (camMode === 0 ? 5.9 : 10.2) + view.pull + (portrait ? 1.6 : 0), up = (camMode === 0 ? 2.0 - vn * 0.3 : 3.6 - vn * 0.4) + (portrait ? 0.7 : 0);
     const cx = (veh.rolling ? veh.x : camX * 0.9 + veh.x * 0.1);
     camera.position.set(cx - syw * back * 0.9, up, pz + cy * back);
     _t.set(veh.x + syw * 14, camMode === 0 ? 1.05 : 0.8, pz - cy * (camMode === 0 ? 16 : 20));
     if (veh.rolling) _t.set(veh.x, veh.yc, pz);
-    const fov = viewFov(58 + 30 * vn * vn / (0.4 + vn));
-    const k = (shake + vn * vn * 0.02) * sh;
+    const fov = viewFov(56 + 30 * vn * vn / (0.35 + vn));
+    const k = (shake + vn * vn * vn * 0.045) * sh;
     camera.position.x += (Math.random() - 0.5) * k; camera.position.y += (Math.random() - 0.5) * k * 0.7;
     camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
   } else {

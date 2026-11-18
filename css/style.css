@@ -7,6 +7,7 @@ html, body { height: 100%; overflow: hidden; background: #05070a; color: var(--i
 :root { --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px); }
 canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 .hidden { display: none !important; }
+#speedvig { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 50% 55%, transparent 42%, rgba(0, 0, 0, 0.35) 72%, rgba(0, 0, 0, 0.75) 100%); }
 #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.5) 100%); }
 #flash { position: fixed; inset: 0; pointer-events: none; background: #fff; opacity: 0; }
 kbd { display: inline-block; min-width: 1.5em; padding: 1px 5px; margin: 0 1px; border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 0.85em; text-align: center; color: var(--ink); background: rgba(255, 255, 255, 0.06); }

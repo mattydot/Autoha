@@ -71,7 +71,7 @@ export class GameAudio {
       this.engineLevel.gain.setTargetAtTime(st.engineOn ? (st.interior ? 0.55 : 0.72) : 0, t, 0.08);
     }
     const v = st.speed, k = st.bedsOn ? 1 : 0;
-    this.wind.g.gain.setTargetAtTime(k * Math.min(0.5, Math.pow(v / 95, 2) * 0.42), t, 0.1); this.wind.f.frequency.setTargetAtTime(350 + v * 9, t, 0.1);
+    this.wind.g.gain.setTargetAtTime(k * Math.min(0.6, Math.pow(v / 70, 2) * 0.45), t, 0.1); this.wind.f.frequency.setTargetAtTime(350 + v * 13, t, 0.1);   // the wind roars early: speed should sound fast
     this.road.g.gain.setTargetAtTime(k * Math.min(0.5, v / 90 * 0.4) * (1 + st.wet * 0.5), t, 0.1); this.road.f.frequency.setTargetAtTime(140 + v * 3 + st.wet * 500, t, 0.1);
     this.rain.g.gain.setTargetAtTime(st.rain * 0.3 * (st.bedsOn ? 1 : 0.5), t, 0.3);
     this.scrape.g.gain.setTargetAtTime(k * st.scrape * 0.55, t, 0.03);
