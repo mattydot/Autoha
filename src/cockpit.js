@@ -119,6 +119,8 @@ export class Cockpit {
       const bv = Math.min(r, d / 2) * 0.8, geo = new THREE.ExtrudeGeometry(sh, { depth: Math.max(0.002, d - bv * 2), bevelEnabled: true, bevelThickness: bv, bevelSize: bv * 0.6, bevelSegments: 3, curveSegments: 5 });
       geo.translate(0, 0, -(d - bv * 2) / 2); const uv = geo.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) / w + 0.5, uv.getY(k) / h + 0.5);
       const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); return m; };
+    // the same, rounded in the side view (height x length): door cards, console, armrests
+    const rboxS = (w, h, d, r, mat, x = 0, y = 0, z = 0) => { const m = rbox(d, h, w, r, mat, 0, 0, 0); m.geometry.rotateY(Math.PI / 2); m.position.set(x, y, z); return m; };
 
     /* ---------------- key points (body x forward -> local -Z) ---------------- */
     const roofF = b.roofF, cowlX = b.cowlX, cowlH = b.cowlH, H = b.H, W = b.W;
@@ -130,10 +132,13 @@ export class Cockpit {
     this.glassAngle = Math.atan2(cowlX - roofF, H - cowlH);
 
     /* ---------------- dashboard: soft upper pad, face, decor strip ---------------- */
-    const prof = new THREE.Shape(); prof.moveTo(Zf, dashY - 0.03); prof.lineTo(Zr - 0.05, dashY + 0.02); prof.quadraticCurveTo(Zr + 0.04, dashY + 0.03, Zr + 0.05, dashY - 0.06);
-    prof.lineTo(Zr + 0.02, dashY - 0.42); prof.lineTo(Zf + 0.2, dashY - 0.5); prof.closePath();
-    const dg = new THREE.ExtrudeGeometry(prof, { depth: inner * 2, bevelEnabled: false, curveSegments: 8 });
-    dg.rotateY(-Math.PI / 2); dg.translate(inner, 0, 0);
+    const prof = new THREE.Shape(); prof.moveTo(Zf, dashY - 0.03);
+    prof.bezierCurveTo((Zf + Zr) / 2, dashY + 0.035, Zr - 0.02, dashY + 0.04, Zr + 0.045, dashY - 0.03);       // soft rounded top pad
+    prof.bezierCurveTo(Zr + 0.07, dashY - 0.12, Zr + 0.05, dashY - 0.32, Zr + 0.0, dashY - 0.42);             // face curving in to the knees
+    prof.quadraticCurveTo(Zr + 0.05, dashY - 0.5, Zf + 0.2, dashY - 0.5); prof.closePath();
+    const bev = 0.03, dg = new THREE.ExtrudeGeometry(prof, { depth: inner * 2 - bev * 2, bevelEnabled: true, bevelThickness: bev, bevelSize: bev * 0.7, bevelOffset: -bev * 0.7, bevelSegments: 4, curveSegments: 16, steps: 12 });
+    dg.rotateY(-Math.PI / 2); dg.translate(inner - bev, 0, 0);
+    { const p = dg.attributes.position; for (let k = 0; k < p.count; k++) { const xn = p.getX(k) / inner; p.setZ(k, p.getZ(k) - 0.05 * xn * xn); } dg.computeVertexNormals(); }
     { const uv = dg.attributes.uv, pos = dg.attributes.position; for (let k = 0; k < uv.count; k++) uv.setXY(k, pos.getX(k) / 0.6, (pos.getY(k) + pos.getZ(k)) / 0.6); }
     g.add(new THREE.Mesh(dg, mLeather));
     g.add(box(inner * 2 - 0.06, 0.045, 0.014, mDeco, 0, dashY - 0.1, Zface + 0.012));                     // decor inlay
@@ -176,9 +181,9 @@ export class Cockpit {
 
     /* ---------------- centre console ---------------- */
     const conX = 0.04, conTop = 0.6;
-    g.add(box(0.26, dashY - 0.35, 0.7, mPlastic, conX, (dashY - 0.05 + 0.3) / 2 - 0.05, Zr + 0.38));      // lower stack
-    const tunnel = box(0.24, 0.1, 0.95, mDeco, conX, conTop - 0.06, Zr + 0.75); g.add(tunnel);
-    g.add(box(0.25, 0.012, 0.95, mLeather, conX, conTop - 0.005, Zr + 0.75));
+    g.add(rboxS(0.26, dashY - 0.35, 0.7, 0.06, mPlastic, conX, (dashY - 0.05 + 0.3) / 2 - 0.05, Zr + 0.38));      // lower stack
+    const tunnel = rboxS(0.24, 0.1, 0.95, 0.04, mDeco, conX, conTop - 0.06, Zr + 0.75); g.add(tunnel);
+    g.add(rboxS(0.25, 0.024, 0.95, 0.012, mLeather, conX, conTop - 0.0, Zr + 0.75));
     // gear selector
     const sel = new THREE.Group(); sel.position.set(conX - 0.02, conTop + 0.01, Zr + 0.5); g.add(sel);
     sel.add(rbox(0.07, 0.03, 0.12, 0.012, mGloss, 0, 0.0, 0)); const lever = rbox(0.05, 0.08, 0.1, 0.02, mSeat, 0, 0.05, 0.01); sel.add(lever);
@@ -205,12 +210,12 @@ export class Cockpit {
     /* ---------------- doors ---------------- */
     for (const sd of [-1, 1]) {
       const dz0 = Zf + 0.1, dz1 = eyeZ + 0.6, dmid = (dz0 + dz1) / 2, dlen = Math.abs(dz1 - dz0), dx = sd * (inner + 0.02);
-      g.add(box(0.05, belt - 0.32, dlen, mPlastic, dx, (belt + 0.32) / 2, dmid));                                  // door card base
-      g.add(box(0.055, 0.2, dlen - 0.12, mDoor, dx - sd * 0.004, belt - 0.13, dmid));                             // leather upper
+      g.add(rboxS(0.05, belt - 0.32, dlen, 0.05, mPlastic, dx, (belt + 0.32) / 2, dmid));                          // door card base
+      g.add(rboxS(0.055, 0.2, dlen - 0.12, 0.06, mDoor, dx - sd * 0.004, belt - 0.13, dmid));                     // leather upper
       g.add(box(0.06, 0.03, dlen - 0.1, mDeco, dx - sd * 0.006, belt - 0.24, dmid));                              // decor strip
       g.add(box(0.012, 0.005, dlen - 0.2, mAmb, dx - sd * 0.032, belt - 0.255, dmid));                            // ambient light
-      g.add(box(0.11, 0.04, 0.55, mSeat, dx - sd * 0.06, belt - 0.3, eyeZ + 0.12));                                // armrest
-      g.add(box(0.08, 0.06, 0.55, mPlastic, dx - sd * 0.05, belt - 0.34, eyeZ + 0.12));
+      g.add(rboxS(0.11, 0.045, 0.55, 0.02, mSeat, dx - sd * 0.06, belt - 0.3, eyeZ + 0.12));                       // armrest
+      g.add(rboxS(0.08, 0.06, 0.55, 0.025, mPlastic, dx - sd * 0.05, belt - 0.34, eyeZ + 0.12));
       const hdl = box(0.012, 0.02, 0.1, mChrome, dx - sd * 0.035, belt - 0.16, eyeZ - 0.12); g.add(hdl);           // door handle
       g.add(box(0.02, 0.04, 0.14, mBlack, dx - sd * 0.03, belt - 0.16, eyeZ - 0.12));
       for (let k = 0; k < 2; k++) g.add(box(0.012, 0.008, 0.03, mPlastic, dx - sd * 0.07, belt - 0.28, eyeZ + 0.05 + k * 0.04));   // window switches

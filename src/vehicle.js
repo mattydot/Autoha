@@ -1,4 +1,4 @@
-import { PACE } from './world.js';
+import { PACE } from './pace.js';
 // Player vehicle dynamics. No three.js here, so it can be tested on its own.
 //
 // Coordinates: x is lateral (+ right), s is distance along the road (+ ahead),
@@ -56,7 +56,7 @@ export class Vehicle {
   /** env: { mu(x, s) -> grip at a point, base: weather grip, assist: bool } */
   step(h, inp, env) {
     if (this.rolling) return this._tumble(h);
-    const spec = this.spec, m = this.m, a = this.a, b = this.b, wb = this.wb;
+    const spec = this.spec, m = this.m, a = this.a, b = this.b, wb = this.wb, rwd = !spec.awd;
     const fx = Math.sin(this.psi), fs = Math.cos(this.psi), rx = fs, rs = -fx;
     const u = this.vx * fx + this.vs * fs, w = this.vx * rx + this.vs * rs, au = Math.abs(u);
 
@@ -71,10 +71,15 @@ export class Vehicle {
     // braking while steering for too long: weight comes off the rear and it starts to step out
     if (inp.brake > 0.3 && Math.abs(inp.steer) > 0.45 && au > 12) this.trail = Math.min(2, (this.trail || 0) + h);
     else this.trail = Math.max(0, (this.trail || 0) - h * 2.5);
-    const trail = clamp((this.trail - 0.4) / 1.4, 0, 1);
-    const wetLoss = clamp(1 - env.base, 0, 1), rearBias = (1.1 - wetLoss * 0.42) * (1 - 0.2 * trail);
-    // game feel: extra grip at low speed (none from ~130 km/h up) so the car is nimble in traffic
-    const low = clamp(1 - au / 36, 0, 1), agile = 1 + 0.35 * low;
+    const trail = clamp((this.trail - (rwd ? 0.25 : 0.45)) / 1.4, 0, 1);
+    // rear-wheel drive: the tail is livelier: less margin at the rear, it steps out under power in a
+    // corner and swings round more when trail-braking. All-wheel drive stays planted.
+    const power = rwd ? clamp(inp.throttle * Math.abs(inp.steer) * 1.4 - 0.3, 0, 1) * clamp((48 - au) / 20, 0, 1) : 0;
+    const wetLoss = clamp(1 - env.base, 0, 1), rearBias = (1.1 - wetLoss * 0.42 + (rwd ? -0.05 : 0.03)) * (1 - (rwd ? 0.32 : 0.14) * trail) * (1 - 0.1 * power);
+    // game feel: extra grip at low speed so the car is nimble in traffic, and in the 70-150 km/h band so
+    // sweeping corners and quick direction changes there are easy, the way they are in a real sports car
+    const low = clamp(1 - au / 36, 0, 1), mid = clamp((au - 12) / 10, 0, 1) * clamp((52 - au) / 14, 0, 1);
+    const agile = 1 + 0.35 * low + 0.24 * mid;
     const muF = (muFL + muFR) / 2 * 1.05 * agile, muR = (muRL + muRR) / 2 * 1.05 * rearBias * agile;
     this.mu = (muF + muR) / 2; this.muBase = env.base;
     this.onSlick = Math.min(muFL, muFR, muRL, muRR) < env.base * 0.6;
@@ -103,7 +108,8 @@ export class Vehicle {
     // below ~130 km/h the steering gets quicker and a little sharper; above that it is unchanged
     // plus a fixed margin (~1.4 deg at the road wheels) so high-speed steering has real authority, like a
     // driver turning the wheel 20 degrees; enough to break traction if overdone
-    const dmax = clamp((1.5 + 0.6 * low) * G * wb / Math.max(au, 4) ** 2 + (env.steerAdd ?? 0.025 * Math.min(1, env.base * env.base)), 0.006, 0.55);
+    const hi = clamp((au - 55) / 25, 0, 1);   // above ~200 km/h: a touch calmer, as it was before the pace change
+    const dmax = clamp(((1.5 + 0.6 * low + 0.7 * mid) * G * wb / Math.max(au, 4) ** 2 + (env.steerAdd ?? 0.025 * Math.min(1, env.base * env.base)) * (1 + 0.6 * mid)) * (1 - 0.22 * hi), 0.006, 0.55);
     const beta = Math.atan2(w, Math.max(au, 0.5));
     let target = inp.steer * dmax;
     if (env.assist && Math.abs(inp.steer) < 0.05 && Math.abs(beta) < 0.3 && au > 3) {
@@ -158,7 +164,7 @@ export class Vehicle {
     if (env.assist && au > 5 && Math.abs(beta) < 0.35) {
       const rRef = clamp(au * (this.delta - dR) / wb, -this.mu * G / au, this.mu * G / au);
       // limited authority (it can only brake single wheels), and it loses most of it on water
-      const auth = 0.1 * m * G * wb * clamp(1 - wetLoss * 1.6, 0.1, 1) * (env.esc ?? 1) * (1 - 0.55 * trail);
+      const auth = 0.1 * m * G * wb * clamp(1 - wetLoss * 1.6, 0.1, 1) * (env.esc ?? 1) * (1 - 0.55 * trail) * (rwd ? 0.55 : 1) * (1 - 0.6 * power);
       Mz -= clamp((this.r - rRef) * this.I * 7 * this.mu, -auth, auth) * (1 - Math.abs(beta) / 0.35);
     }
 
@@ -166,7 +172,7 @@ export class Vehicle {
     this.vx += (FX * fx + FY * rx) / m * h; this.vs += (FX * fs + FY * rs) / m * h; this.r += Mz / this.I * h;
     if (this.speed < 0.3 && inp.throttle < 0.05) { this.vx *= 0.8; this.vs *= 0.8; this.r *= 0.8; }
     this.psi += this.r * h; if (this.psi > Math.PI) this.psi -= 2 * Math.PI; else if (this.psi < -Math.PI) this.psi += 2 * Math.PI;
-    this.x += this.vx * h; this.s += this.vs * h * PACE;
+    this.x += this.vx * h * PACE; this.s += this.vs * h * PACE;
     this.ax = FX / m; this.ay = FY / m;
 
     // telemetry for sound, smoke, skid marks
@@ -206,7 +212,7 @@ export class Vehicle {
       // up on two wheels: the sideways slide keeps pushing it over, gravity pulls it back
       const sp = this.speed, wa = Math.abs(this.w), tipA = Math.atan2(this.W, this.H), a = Math.abs(this.phi);
       if (sp > 0.01) { const d = Math.min(sp, 0.55 * G * h); this.vx -= this.vx / sp * d; this.vs -= this.vs / sp * d; }
-      this.r *= Math.exp(-h * 1.2); this.psi += this.r * h; this.x += this.vx * h; this.s += this.vs * h * PACE;
+      this.r *= Math.exp(-h * 1.2); this.psi += this.r * h; this.x += this.vx * h * PACE; this.s += this.vs * h * PACE;
       const push = clamp((wa - 6) / 6, 0, 1.8) * 3.4, fall = 4.1 * Math.sin(tipA - a);
       this.omega += this.rollDir * (push - fall) * h; this.phi += this.omega * h; this.yc = ycMin(this.phi);
       if (Math.abs(this.phi) > tipA) {                         // past the balance point: it goes over
@@ -221,7 +227,7 @@ export class Vehicle {
     const ground = this.yc <= ycMin(this.phi) + 0.04, sp = this.speed;
     if (ground && sp > 0.01) { const d = Math.min(sp, 0.6 * G * h); this.vx -= this.vx / sp * d; this.vs -= this.vs / sp * d; }
     this.r *= Math.exp(-h * (ground ? 1.6 : 0.3)); this.psi += this.r * h;
-    this.x += this.vx * h; this.s += this.vs * h * PACE;
+    this.x += this.vx * h * PACE; this.s += this.vs * h * PACE;
     const before = Math.floor(this.phi / half);
     this.phi += this.omega * h; this.vy -= G * h; this.yc += this.vy * h;
     if (Math.floor(this.phi / half) !== before && ground) {     // an edge or face hits the ground

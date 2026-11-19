@@ -3,7 +3,7 @@
 // after a hard hit it stops driving and slides, spins and comes to rest,
 // hazard lights on, as an obstacle for everyone else.
 import * as THREE from 'three';
-import { LANES, ROAD, PACE, visYaw } from './world.js';
+import { LANES, ROAD, PACE } from './world.js';
 import { TrafficFactory, TRAFFIC_KINDS, EVERYDAY, MATS } from './cars.js';
 const EVERY_SUM = EVERYDAY.reduce((a, [, w]) => a + w, 0);
 function everyday() { let r = Math.random() * EVERY_SUM; for (const [k, w] of EVERYDAY) if ((r -= w) < 0) return k; return 'sedan'; }
@@ -143,7 +143,7 @@ export class Traffic {
         else if (c.lane < 2 && c.kind !== 'truck' ? Math.random() < dt * 0.12 : c.lane === 1 && Math.random() < dt * 0.3) { if (this._free(c.lane + 1, c.s, 40, 160, c) && !playerNear(c.lane + 1, 14, 20) && world.closureAhead(c.lane + 1, c.s, 500) > 500) to = c.lane + 1; }
         if (to >= 0 && to !== c.lane) { c.toLane = to; c.lc = 2.5; c.ind = to < c.lane ? -1 : 1; c.patience = rand(3, 9); }
       }
-      c.vx = (c.x - x0) / Math.max(dt, 1e-4); c.psi = Math.atan2(c.vx, Math.max(c.vs, 5)); c.r = 0;
+      c.vx = (c.x - x0) / Math.max(dt, 1e-4); c.psi = Math.atan2(c.vx, Math.max(c.vs, 5) * PACE); c.r = 0;
       this._visual(c, dt, night, blink, sky);
     }
     MATS.head.emissiveIntensity = 0.9 + night * 5 + (sky.cur.rain + sky.cur.fog * 60) * 1.5;
@@ -173,19 +173,19 @@ export class Traffic {
   _slide(c, dt) {
     const sp = Math.hypot(c.vx, c.vs);
     if (sp > 0.05) { const d = Math.min(sp, 7.5 * dt); c.vx -= c.vx / sp * d; c.vs -= c.vs / sp * d; } else { c.vx = c.vs = 0; c.stopped = true; }
-    c.r *= Math.exp(-dt * 1.8); c.psi += c.r * dt; c.x += c.vx * dt; c.s += c.vs * dt * PACE;
+    c.r *= Math.exp(-dt * 1.8); c.psi += c.r * dt; c.x += c.vx * dt * PACE; c.s += c.vs * dt * PACE;
     const b = this.world.bounds(c.s), hw = (Math.abs(c.L * Math.sin(c.psi)) + Math.abs(c.W * Math.cos(c.psi))) / 2;
     if (c.x + hw > b.max) { c.x = b.max - hw; c.vx = -Math.abs(c.vx) * 0.2; c.r *= 0.6; }
     if (c.x - hw < b.min) { c.x = b.min + hw; c.vx = Math.abs(c.vx) * 0.2; c.r *= 0.6; }
     c.lane = LANES.reduce((best, l, i) => (Math.abs(l - c.x) < Math.abs(LANES[best] - c.x) ? i : best), 0); c.toLane = c.lane;
-    c.brake = 1; c.mesh.position.set(c.x, 0, -c.s); c.mesh.rotation.y = -visYaw(c.psi);
+    c.brake = 1; c.mesh.position.set(c.x, 0, -c.s); c.mesh.rotation.y = -c.psi;
     const spin = c.vs * dt / c.mesh.userData.wheelR * 0.2; for (const w of c.mesh.userData.wheels) w.rotation.z -= spin;
     c.mesh.userData.tail.emissiveIntensity = 7;
   }
 
   _visual(c, dt, night, blink, sky) {
     const m = c.mesh, u = m.userData;
-    m.position.set(c.x, 0, -c.s); m.rotation.y = -visYaw(c.psi);
+    m.position.set(c.x, 0, -c.s); m.rotation.y = -c.psi;
     const spin = c.vs * dt * PACE / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
     u.tail.emissiveIntensity = c.brake ? 7 : 0.25 + night * 1.6 + sky.cur.rain * 0.8;
     for (const i of u.ind.l) i.visible = c.ind < 0 && blink; for (const i of u.ind.r) i.visible = c.ind > 0 && blink;

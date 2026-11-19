@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 // each streak is a thin cross of two ribbons (one flat, one upright), so it reads from any angle and at any pixel density
 export class SpeedStreaks {
-  constructor(frame, n = 120) {
+  constructor(frame, n = 60) {
     this.n = n; this.p = [];
     const g = new THREE.BufferGeometry();
     this.pos = new Float32Array(n * 8 * 3); this.col = new Float32Array(n * 8 * 3);

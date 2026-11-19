@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SpeedStreaks, RadialBlurShader } from './speedfx.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CARS, buildPlayerCar, setCarColor, MATS } from './cars.js';
-import { World, LANES, PACE, visYaw } from './world.js';
+import { World, LANES, PACE } from './world.js';
 import { Sky, WEATHERS } from './sky.js';
 import { Traffic } from './traffic.js';
 import { Police } from './police.js';
@@ -319,9 +319,9 @@ function updateCar(dt) {
   view.pitch += (clamp(veh.ax, -12, 8) * 0.0032 - view.pitch) * Math.min(1, dt * 6);
   view.lean += (clamp(-veh.ay, -12, 12) * 0.0045 - view.lean) * Math.min(1, dt * 5);
   rig.position.set(veh.x, veh.rolling ? veh.yc : H / 2, -(veh.s - world.s));
-  rig.rotation.set(veh.rolling ? 0 : view.pitch, -visYaw(veh.psi), -(veh.phi + (veh.rolling ? 0 : view.lean)));
+  rig.rotation.set(veh.rolling ? 0 : view.pitch, -veh.psi, -(veh.phi + (veh.rolling ? 0 : view.lean)));
   rig.updateMatrixWorld(true);
-  shadow.position.set(veh.x, 0.02, rig.position.z); shadow.rotation.set(-Math.PI / 2, 0, -visYaw(veh.psi)); shadow.material.opacity = 0.75 * clamp(1 - (veh.yc - H / 2) / 3, 0, 1);
+  shadow.position.set(veh.x, 0.02, rig.position.z); shadow.rotation.set(-Math.PI / 2, 0, -veh.psi); shadow.material.opacity = 0.75 * clamp(1 - (veh.yc - H / 2) / 3, 0, 1);
   const spin = veh.u * dt * PACE / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
   for (const f of u.front) f.rotation.y = -input.steer * 0.42 * clamp(1 - veh.speed / 50, 0.12, 1);
   const braking = mode === 'play' && (input.brake > 0.1 || veh.wrecked);
@@ -367,7 +367,7 @@ function updateCamera(dt, t) {
   if (mode === 'play' || mode === 'paused' || mode === 'over') {
     camX += (veh.x - camX) * Math.min(1, dt * 6);
     // the chase camera swings round with the car, but lags behind spins
-    const target = veh.rolling ? view.camYaw : clamp(visYaw(veh.psi), -1.2, 1.2) * 0.85;
+    const target = veh.rolling ? view.camYaw : clamp(veh.psi, -1.2, 1.2) * 0.85;
     view.camYaw += (target - view.camYaw) * Math.min(1, dt * (Math.abs(veh.r) > 1 ? 1.2 : 3));
     const cy = Math.cos(view.camYaw), syw = Math.sin(view.camYaw);
     if (inCar) {

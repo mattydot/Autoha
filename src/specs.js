@@ -49,7 +49,7 @@ export const CARS = [
     sound: { cyl: 10, f1: 190, f2: 760, bright: 1.0, decay: 120, rasp: 0.55, turbo: 0.0, pops: 0.9, uneven: 0.12, gain: 1.1 },
     body: {
       L: 4.52, W: 1.93, H: 1.17, c: 0.12, wheelR: 0.35, wb: 2.62, fo: 1.06,
-      hoodH: 0.60, noseH: 0.36, cowlH: 0.78, cowlX: 0.95, roofF: -0.05, roofR: -0.55,
+      hoodH: 0.64, noseH: 0.37, cowlH: 0.79, cowlX: 0.95, roofF: -0.05, roofR: -0.55,
       baseR: -1.75, beltR: 0.92, deckH: 0.90, tailH: 0.84,
       pillars: [], grille: 'intakes', head: 'y', tail: 'y', wing: 'lip', exhaust: 'center2', flare: 0.04, midEngine: true,
     },
@@ -62,7 +62,7 @@ export const CARS = [
     sound: { cyl: 12, f1: 175, f2: 820, bright: 1.0, decay: 125, rasp: 0.6, turbo: 0.0, pops: 1.0, uneven: 0.05, gain: 1.15 },
     body: {
       L: 4.84, W: 2.03, H: 1.14, c: 0.115, wheelR: 0.365, wb: 2.70, fo: 1.14,
-      hoodH: 0.56, noseH: 0.33, cowlH: 0.74, cowlX: 1.05, roofF: 0.05, roofR: -0.5,
+      hoodH: 0.62, noseH: 0.35, cowlH: 0.80, cowlX: 1.05, roofF: 0.05, roofR: -0.5,
       baseR: -1.95, beltR: 0.90, deckH: 0.88, tailH: 0.82,
       pillars: [], grille: 'intakes', head: 'y', tail: 'y', wing: 'wing', exhaust: 'center1', flare: 0.05, midEngine: true,
     },
@@ -98,7 +98,7 @@ export const CARS = [
   {
     id: 'm5b', name: 'SCHATTEN M-FÜNF', sub: 'Blacked out · straight pipes',
     engine: '4.4 L V8 biturbo, no silencers', ps: 760, mass: 1940, vmax: 320, zeroTo100: 3.1,
-    handling: 0.98, awd: true, gears: 8, redline: 7200, idle: 700,
+    handling: 0.98, awd: false, gears: 8, redline: 7200, idle: 700,
     colors: [0x0a0a0b, 0x161618, 0x22252a, 0x0c111c, 0x2c2f33, 0x101010],
     matte: [false, true, true, false, true, false], blackWheels: true, blackout: true,
     sound: { cyl: 8, f1: 92, f2: 340, bright: 0.85, decay: 58, rasp: 0.85, turbo: 0.45, pops: 1.0, uneven: 0.6, gain: 1.5 },

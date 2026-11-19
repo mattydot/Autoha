@@ -174,11 +174,17 @@ function buildWheel(r, w, detail, sporty, side, rimMat = MATS.rim) {
 // Build coordinates: x forward, y up, z lateral. Rotated at the end so the
 // nose points to -Z (direction of travel).
 const ARCH_GAP = 0.075;
+// a thin panel shaped like `shape` (side-profile x, y) laid onto the body surface on side s
+function decal(shape, mat, s, zAt, lift = 0.003) {
+  const g = new THREE.ShapeGeometry(shape, 8), p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setZ(i, s * (zAt(p.getX(i), p.getY(i)) + lift));
+  if (s < 0) g.index.array.reverse?.(); g.computeVertexNormals(); return new THREE.Mesh(g, mat);
+}
 // points of an arch opening (front to rear) in the side profile, from the sill line y0 up and over the wheel
-function archPts(ax, cy, ra, y0) {
+function archPts(ax, cy, ra, y0, yMax = Infinity) {
   const a0 = Math.asin(Math.max(-1, Math.min(1, (y0 - cy) / ra))), pts = [], n = 14;
   pts.push([ax + ra * Math.cos(a0) + 0.04, y0, 0.03]);
-  for (let i = 0; i <= n; i++) { const a = a0 + (Math.PI - 2 * a0) * i / n; pts.push([ax + ra * Math.cos(a), cy + ra * Math.sin(a), 0]); }
+  for (let i = 0; i <= n; i++) { const a = a0 + (Math.PI - 2 * a0) * i / n; pts.push([ax + ra * Math.cos(a), Math.min(yMax, cy + ra * Math.sin(a)), 0]); }
   pts.push([ax - ra * Math.cos(a0) - 0.04, y0, 0.03]);
   return pts;
 }
@@ -197,6 +203,9 @@ function buildBody(b, mats, detail, cabin = false) {
 
   // --- lower body ------------------------------------------------------
   const rearX = -hl;
+  // height of the top surface (bonnet / rear deck) above an axle; low supercars have their wheel tops above it
+  const skinAt = (x) => x > b.cowlX ? (x < hl - 0.28 ? lineY([b.cowlX, b.cowlH], [hl - 0.28, b.hoodH], x) : lineY([hl - 0.28, b.hoodH], [hl, b.noseH], x))
+    : x < b.baseR ? lineY([rearX + 0.03, b.tailH], [b.baseR, b.beltR], x) : b.beltR;
   const body = roundedPath([
     [rearX + 0.10, b.c, 0.06], [rearX, b.c + 0.22, 0.10], [rearX + 0.03, b.tailH, 0.10],
     [b.baseR, b.beltR, 0.25],
@@ -205,7 +214,7 @@ function buildBody(b, mats, detail, cabin = false) {
     [b.cowlX, b.cowlH, 0.35],
     [hl - 0.28, b.hoodH, 0.30], [hl, b.noseH, 0.12], [hl - 0.04, b.c + 0.05, 0.08], [hl - 0.25, b.c, 0.05],
     // wheel arches cut out of the side, so the tyres sit in an opening instead of passing through the paint
-    ...[hl - b.fo, hl - b.fo - b.wb].flatMap((ax) => archPts(ax, b.wheelR + 0.01, b.wheelR + ARCH_GAP, b.c)),
+    ...[hl - b.fo, hl - b.fo - b.wb].flatMap((ax) => archPts(ax, b.wheelR + 0.01, b.wheelR + ARCH_GAP, b.c, skinAt(ax) - 0.045)),
   ], 0.1);
   g.add(mesh(warp(extrude(body, W, 0.09, 4, 10), tumble), mats.paint));
 
@@ -246,9 +255,10 @@ function buildBody(b, mats, detail, cabin = false) {
 
   // --- dark lower trim --------------------------------------------------
   const zAt = (x, y = 0.5) => { const v = new THREE.Vector3(x, y, W / 2); tumble(v); return v.z; };
-  g.add(box(b.wb - b.wheelR * 2 - 0.2, 0.09, W * 0.985, MATS.black, hl - b.fo - b.wb / 2, b.c + 0.03, 0));    // skirts
-  g.add(box(0.30, 0.05, W * 0.86, MATS.black, hl - 0.14, b.c + 0.0, 0));                                       // splitter
-  g.add(box(0.26, 0.17, W * 0.66, MATS.black, rearX + 0.11, b.c + 0.09, 0));                                   // diffuser
+  { const xm = hl - b.fo - b.wb / 2, zs = Math.min(zAt(xm - b.wb * 0.3, b.c + 0.05), zAt(xm + b.wb * 0.3, b.c + 0.05));
+    g.add(box(b.wb - b.wheelR * 2 - 0.24, 0.08, zs * 2 + 0.008, MATS.black, xm, b.c + 0.035, 0)); }                 // skirts
+  g.add(box(0.24, 0.035, Math.min(W * 0.84, zAt(hl - 0.15, b.c) * 2), MATS.black, hl - 0.16, b.c + 0.0, 0));      // splitter
+  g.add(box(0.2, 0.13, W * 0.62, MATS.black, rearX + 0.13, b.c + 0.075, 0));                                   // diffuser
 
   // --- wheel arches -----------------------------------------------------
   const axF = hl - b.fo, axR = axF - b.wb;
@@ -258,19 +268,36 @@ function buildBody(b, mats, detail, cabin = false) {
     const a = mesh(new THREE.CylinderGeometry(b.wheelR + ARCH_GAP, b.wheelR + ARCH_GAP, dep, 26), MATS.black, ax, b.wheelR + 0.01, s * (z0 - dep / 2));
     a.rotation.x = Math.PI / 2; g.add(a);
     // half-tube liner over the top of the tyre so the opening does not show daylight
-    const ln = new THREE.Mesh(new THREE.CylinderGeometry(b.wheelR + ARCH_GAP - 0.005, b.wheelR + ARCH_GAP - 0.005, zAt(ax, 0.3) - z0 + 0.02, 22, 1, true, Math.PI / 2 - 0.2, Math.PI + 0.4), MATS.wellLiner);
-    ln.rotation.x = Math.PI / 2; ln.position.set(ax, b.wheelR + 0.01, s * (zAt(ax, 0.3) + z0) / 2); g.add(ln);
-    if (b.flare) { const f = new THREE.Mesh(new THREE.TorusGeometry(b.wheelR + ARCH_GAP + 0.01, b.flare * 0.35 + 0.01, 8, 28, Math.PI + 0.3), mats.paint);
-      f.rotation.z = -0.15; f.scale.z = 0.45; f.position.set(ax, b.wheelR + 0.01, s * (zAt(ax, 0.6) - 0.01)); g.add(f); }
+    const zo = Math.min(zAt(ax, 0.3), zAt(ax, b.wheelR * 2 + 0.05), zAt(ax - b.wheelR, 0.5), zAt(ax + b.wheelR, 0.5)) - 0.015;
+    const ln = new THREE.Mesh(new THREE.CylinderGeometry(b.wheelR + ARCH_GAP - 0.005, b.wheelR + ARCH_GAP - 0.005, zo - z0, 22, 1, true, Math.PI / 2 - 0.2, Math.PI + 0.4), MATS.wellLiner);
+    ln.rotation.x = Math.PI / 2; ln.position.set(ax, b.wheelR + 0.01, s * (zo + z0) / 2); g.add(ln);
+    const need = b.wheelR + 0.01 + b.wheelR + ARCH_GAP + 0.03 - skinAt(ax);
+    if (need > 0) {   // raised wing over the wheel, the way a real supercar's front and rear wings sit proud of the bonnet
+      const R0 = b.wheelR + ARCH_GAP, R1 = R0 + 0.035 + need, cy = b.wheelR + 0.01, sk = skinAt(ax) - 0.06;
+      const a0 = Math.asin(Math.max(-1, Math.min(1, (sk - cy) / R1))), a1 = Math.asin(Math.max(-1, Math.min(1, (sk - cy) / R0)));
+      const sh = new THREE.Shape(); sh.absarc(0, 0, R1, a0, Math.PI - a0, false); sh.absarc(0, 0, R0, Math.PI - a1, a1, true); sh.closePath();
+      const dw = 0.5, fg = new THREE.ExtrudeGeometry(sh, { depth: dw, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelOffset: -0.03, bevelSegments: 3, curveSegments: 20, steps: 8 });
+      // the inner side melts down into the bonnet, so the wing reads as one smooth swelling, not a hump stuck on
+      warp(fg, (v) => { const t = s > 0 ? 1 - v.z / dw : v.z / dw, k = Math.pow(Math.max(0, Math.min(1, t)), 1.6), y = v.y + cy;
+        if (y > sk) v.y = sk - cy + (y - sk) * (1 - k); });
+      const zr = Math.min(zAt(ax, cy + R1 * 0.7), zAt(ax - R0, 0.6), zAt(ax + R0, 0.6));
+      const fm = new THREE.Mesh(fg, mats.paint); fm.position.set(ax, cy, s > 0 ? zr - dw : -zr); g.add(fm);
+    }
+    if (b.flare && !b.midEngine) {   // flared arch: a lip laid on the body side around the opening
+      const pts = []; for (let i = 0; i <= 20; i++) { const an = 0.05 + (Math.PI - 0.1) * i / 20, R = b.wheelR + ARCH_GAP + 0.015, x = ax + Math.cos(an) * R, y = b.wheelR + 0.01 + Math.sin(an) * R;
+        if (y < b.c + 0.05) continue; pts.push(new THREE.Vector3(x, y, s * (zAt(x, y) + 0.004))); }
+      if (pts.length > 3) { const tg = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 30, Math.min(0.03, 0.012 + b.flare * 0.25), 6, false); tg.scale(1, 1, 0.45); tg.translate(0, 0, s * (zAt(ax, 0.6) + 0.004) * 0.55); g.add(new THREE.Mesh(tg, mats.paint)); }
+    }
   }
 
   // --- front -----------------------------------------------------------
   const fx = hl - 0.03, zh = zAt(hl - 0.2, b.noseH) - 0.30;
-  const HL = (w, h, y, z, xo = 0, m = MATS.head) => { for (const s of [-1, 1]) {
+  const HL = (w, h, y, z, xo = 0, m = MATS.head) => { y = Math.min(y, lampTop - (h + 0.03) / 2); for (const s of [-1, 1]) {
     g.add(box(0.13, h + 0.03, w + 0.04, MATS.lampHouse, fx - 0.18 + xo, y, s * (z - 0.05)));
     g.add(box(0.14, Math.max(0.014, h * 0.32), w * 0.9, m, fx - 0.17 + xo, y + h * 0.22, s * (z - 0.05)));
     g.add(box(0.14, Math.max(0.01, h * 0.18), w * 0.35, m, fx - 0.172 + xo, y - h * 0.18, s * (z - 0.05 + w * 0.22))); } };
-  const hy = (b.hoodH + b.noseH) / 2 + 0.04;
+  const hoodAt = (x) => lineY([hl - 0.28, b.hoodH], [hl, b.noseH], x), lampTop = hoodAt(fx - 0.18) - 0.02;
+  const hy0 = (b.hoodH + b.noseH) / 2 + 0.04, hy = Math.min(hy0, lampTop - 0.07);
   switch (b.head) {
     case 'slim': HL(0.46, 0.07, hy + 0.01, zh); HL(0.40, 0.025, hy - 0.06, zh, 0.01); break;
     case 'angular': HL(0.50, 0.09, hy + 0.01, zh); HL(0.20, 0.05, hy - 0.07, zh + 0.14, 0.005); break;
@@ -343,18 +370,22 @@ function buildBody(b, mats, detail, cabin = false) {
     case 'lip': g.add(box(0.12, 0.025, W * 0.78, b.midEngine ? MATS.black : mats.paint, rearX + 0.1, b.tailH + 0.035, 0)); break;
     case 'roof': { const m = box(0.3, 0.03, W * 0.7, mats.paint, b.roofR - 0.2, b.H - 0.02, 0); m.rotation.z = 0.12; g.add(m); break; }
     case 'wing':
-      g.add(box(0.34, 0.03, W * 0.92, MATS.black, rearX + 0.24, b.tailH + 0.22, 0));
-      for (const s of [-1, 1]) { g.add(box(0.2, 0.2, 0.03, MATS.black, rearX + 0.26, b.tailH + 0.11, s * W * 0.3)); g.add(box(0.36, 0.1, 0.02, mats.paint, rearX + 0.24, b.tailH + 0.24, s * W * 0.46)); }
+      { const blade = box(0.3, 0.022, W * 0.86, MATS.black, rearX + 0.26, b.tailH + 0.2, 0); blade.rotation.z = -0.08; g.add(blade); }
+      for (const s of [-1, 1]) { g.add(box(0.12, 0.17, 0.025, MATS.black, rearX + 0.3, b.tailH + 0.1, s * W * 0.27)); g.add(box(0.32, 0.08, 0.015, MATS.black, rearX + 0.26, b.tailH + 0.21, s * W * 0.43)); }
       break;
   }
   if (b.midEngine) { // engine cover louvres + side intakes
-    for (let i = 0; i < 4; i++) { const x = b.roofR - 0.25 - i * 0.24;
-      const m = box(0.14, 0.02, W * 0.34, MATS.black, x, lineY(G1, G0, x) + 0.035, 0); m.rotation.z = Math.atan2(G1[1] - G0[1], G1[0] - G0[0]); g.add(m); }
-    for (const s of [-1, 1]) { const m = box(0.5, 0.2, 0.06, MATS.black, axR + 0.62, 0.52, s * (zAt(axR + 0.6, 0.5) - 0.01)); g.add(m); }
+    for (let i = 0; i < 4; i++) { const x = b.roofR - 0.3 - i * 0.22;
+      const m = box(0.11, 0.012, W * 0.32, MATS.black, x, lineY(G1, G0, x) + 0.012, 0); m.rotation.z = Math.atan2(G1[1] - G0[1], G1[0] - G0[0]); g.add(m); }
+    // side intake ahead of the rear wheel: a wedge-shaped dark opening that follows the body surface
+    const x0 = axR + b.wheelR + 0.12, y0 = 0.36;
+    const sh = roundedPath([[x0, y0, 0.03], [x0 + 0.62, y0 + 0.24, 0.05], [x0 + 0.12, y0 + 0.27, 0.04], [x0 - 0.02, y0 + 0.14, 0.03]], 0.03);
+    for (const s of [-1, 1]) g.add(decal(sh, MATS.black, s, zAt, 0.004));
   }
   if (b.cLine) for (const s of [-1, 1]) { // signature C-shaped side line
-    const t = new THREE.Mesh(new THREE.TorusGeometry(0.40, 0.011, 6, 32, Math.PI * 1.25), CH);
-    t.rotation.z = Math.PI * 0.42; t.scale.set(1.25, 1, 0.5); t.position.set(-0.28, 0.64, s * (zAt(-0.3, 0.6) - 0.006)); g.add(t);
+    const pts = []; for (let i = 0; i <= 24; i++) { const a = Math.PI * (0.35 + 1.25 * i / 24), x = -0.28 + Math.cos(a) * 0.5, y = 0.64 + Math.sin(a) * 0.36;
+      pts.push(new THREE.Vector3(x, y, s * (zAt(x, y) + 0.004))); }
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.012, 6, false), CH));
   }
   if (b.chromeTrim) {
     for (const s of [-1, 1]) g.add(box(b.L * 0.5, 0.025, 0.02, CH, (b.cowlX + b.baseR) / 2, belt + 0.01, s * (zAt(0, belt) + 0.003)));
@@ -364,7 +395,9 @@ function buildBody(b, mats, detail, cabin = false) {
   // --- mirrors, plates, handles ------------------------------------------
   for (const s of [-1, 1]) {
     const mz = zAt(b.cowlX - 0.25, b.cowlH) ;
-    g.add(box(0.16, 0.10, 0.2, mats.roof === mats.paint ? mats.paint : MATS.black, b.cowlX - 0.3, b.cowlH + 0.07, s * (mz + 0.06)));
+    const mm = mats.roof === mats.paint ? mats.paint : MATS.black;
+    const cap = mesh(new THREE.SphereGeometry(1, 14, 10), mm, b.cowlX - 0.3, b.cowlH + 0.085, s * (mz + 0.13)); cap.scale.set(0.075, 0.05, 0.1); g.add(cap);
+    g.add(box(0.06, 0.025, 0.1, mm, b.cowlX - 0.28, b.cowlH + 0.05, s * (mz + 0.05)));
     if (detail && !b.midEngine) for (const hx of [b.cowlX - 1.05, b.cowlX - 1.95].slice(0, b.pillars.length ? 2 : 1))
       g.add(box(0.2, 0.025, 0.02, mats.paint, hx, belt - 0.07, s * (zAt(hx, belt - 0.07) + 0.006)));
   }

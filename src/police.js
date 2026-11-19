@@ -4,7 +4,7 @@
 // in: one behind, one in front, one on each side, but never on a side where
 // there is no lane. Box the player in and bring them to a stop and it is
 // over. Outrun them, or keep away until they give up, and you are free.
-import { LANES, PACE, visYaw } from './world.js';
+import { LANES, PACE } from './world.js';
 import { POLICE_SIGN } from './cars.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);

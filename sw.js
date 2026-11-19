@@ -16,6 +16,7 @@ const FILES = [
   "src/main.js",
   "src/mobile.js",
   "src/speedfx.js",
+  "src/pace.js",
   "src/physics.js",
   "src/police.js",
   "src/props.js",
