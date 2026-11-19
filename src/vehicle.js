@@ -25,9 +25,9 @@ export class Vehicle {
   setSpec(spec) {
     const b = spec.body; this.spec = spec;
     this.m = spec.mass; this.wb = b.wb; this.L = b.L; this.W = b.W; this.H = b.H;
-    const front = b.midEngine ? 0.42 : spec.id === 'maybach' ? 0.53 : 0.51;   // static front weight share
+    const front = spec.front ?? (b.midEngine ? 0.42 : spec.id === 'maybach' ? 0.53 : 0.51);   // static front weight share
     this.a = this.wb * (1 - front); this.b = this.wb * front;                     // CG to front / rear axle
-    this.h = b.midEngine ? 0.43 : spec.id === 'maybach' ? 0.6 : spec.id === 'rs6' ? 0.55 : 0.5;
+    this.h = spec.cg ?? (b.midEngine ? 0.43 : spec.id === 'maybach' ? 0.6 : spec.id === 'rs6' ? 0.55 : 0.5);
     this.I = this.m * (b.L * b.L + b.W * b.W) / 12;
     this.track = b.W - 0.32;
     this.down = b.midEngine ? 0.22 : 0.07;            // downforce at 250 km/h, share of weight
@@ -75,7 +75,7 @@ export class Vehicle {
     // rear-wheel drive: the tail is livelier: less margin at the rear, it steps out under power in a
     // corner and swings round more when trail-braking. All-wheel drive stays planted.
     const power = rwd ? clamp(inp.throttle * Math.abs(inp.steer) * 1.4 - 0.3, 0, 1) * clamp((48 - au) / 20, 0, 1) : 0;
-    const wetLoss = clamp(1 - env.base, 0, 1), rearBias = (1.1 - wetLoss * 0.42 + (rwd ? -0.05 : 0.03)) * (1 - (rwd ? 0.32 : 0.14) * trail) * (1 - 0.1 * power);
+    const wetLoss = clamp(1 - env.base, 0, 1), rearBias = (1.1 - wetLoss * 0.42 + (rwd ? -0.05 : 0.03)) * (1 - (rwd ? 0.32 : 0.14) * trail) * (1 - 0.1 * (spec.drift || 1) * power);
     // game feel: extra grip at low speed so the car is nimble in traffic, and in the 70-150 km/h band so
     // sweeping corners and quick direction changes there are easy, the way they are in a real sports car
     const low = clamp(1 - au / 36, 0, 1), mid = clamp((au - 12) / 10, 0, 1) * clamp((52 - au) / 14, 0, 1);

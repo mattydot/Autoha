@@ -8,13 +8,13 @@ import { TrafficFactory, TRAFFIC_KINDS, EVERYDAY, MATS } from './cars.js';
 const EVERY_SUM = EVERYDAY.reduce((a, [, w]) => a + w, 0);
 function everyday() { let r = Math.random() * EVERY_SUM; for (const [k, w] of EVERYDAY) if ((r -= w) < 0) return k; return 'sedan'; }
 // fast cars in the left lane: mostly sporty saloons and estates, now and then a tuned or blacked-out one (no supercars)
-const FAST = ['m3', 'm3', 'rs6', 'rs6', 'maybach', 'r6', 'm5b'];
+const FAST = ['m3', 'm3', 'rs6', 'rs6', 'maybach', 'r6', 'm5b', 'kay', 'xm', 'g4', 'gtb'];
 import { sat, resolve } from './physics.js';
 
 const KMH = 1 / 3.6;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = THREE.MathUtils.clamp;
-const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, r6: 1520, m5b: 1940, police: 2075, city: 1050, hatch: 1350, mpv: 1700, crossover: 1550, bus: 2300, coupe: 1600 };
+const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, r6: 1520, m5b: 1940, police: 2075, city: 1050, hatch: 1350, mpv: 1700, crossover: 1550, bus: 2300, coupe: 1600, g4: 3020, kay: 2220, xm: 2710, gtb: 1520 };
 
 export class Traffic {
   constructor(world) {

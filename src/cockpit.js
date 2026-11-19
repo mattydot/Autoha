@@ -19,6 +19,12 @@ const STYLE = {
   v12:     { dash: 0x151517, trim: 0x1c1c1f, seat: 0x18181a, stitch: '#ffb000', accent: '#ffb000', ambient: 0xffa000, wheel: 0x121214, carbon: true, flat: true, cluster: 'hex' },
   r6:      { dash: 0x17181b, trim: 0x26282c, seat: 0x1d1f23, stitch: '#2a64d6', accent: '#2a8cff', ambient: 0x2a6cff, wheel: 0x151517, cluster: 'virtual' },
   m5b:     { dash: 0x0e0e10, trim: 0x18181b, seat: 0x121214, stitch: '#c4121a', accent: '#ff2a2a', ambient: 0xff1a1a, wheel: 0x0f0f11, carbon: true, cluster: 'm' },
+  g4:      { dash: 0x1a1b1d, trim: 0x2a2c2f, seat: 0x5a3a22, stitch: '#c8a27a', accent: '#e8e8e8', ambient: 0xffffff, wheel: 0x161618, cluster: 'virtual' },
+  kay:     { dash: 0x141416, trim: 0x2a2b2e, seat: 0x1b1b1e, stitch: '#c9a227', accent: '#ffcc33', ambient: 0xffd27a, wheel: 0x131315, carbon: true, cluster: 'classic' },
+  xm:      { dash: 0x2a1c14, trim: 0x3a2a20, seat: 0x6a3a22, stitch: '#c87a3a', accent: '#ffa860', ambient: 0xff9a50, wheel: 0x1a1210, wood: true, cluster: 'm' },
+  dakar:   { dash: 0x161719, trim: 0x2b3a2f, seat: 0x1d2a22, stitch: '#d8b47a', accent: '#d8ff9a', ambient: 0xbfe58a, wheel: 0x141416, cluster: 'classic' },
+  gt3:     { dash: 0x111113, trim: 0x1a1a1d, seat: 0x141416, stitch: '#9ad12b', accent: '#b8ff3a', ambient: 0x9ad12b, wheel: 0x121214, carbon: true, flat: true, cluster: 'classic' },
+  gtb:     { dash: 0x121214, trim: 0x1c1c1f, seat: 0x171719, stitch: '#f07a12', accent: '#ff8a1a', ambient: 0xff7a10, wheel: 0x111113, carbon: true, flat: true, cluster: 'virtual' },
   w16:     { dash: 0x101827, trim: 0x23304a, seat: 0x1c2a48, stitch: '#9fc4ff', accent: '#4fa3ff', ambient: 0x3a8cff, wheel: 0x101828, alu: true, cluster: 'classic' },
 };
 
@@ -72,7 +78,7 @@ export class Cockpit {
 
   build(spec, car) {
     this.dispose();
-    const b = spec.body, st = STYLE[spec.id] || STYLE.m3, mid = !!b.midEngine;
+    const b = spec.body, st = STYLE[spec.id] || STYLE.m3, mid = !!b.midEngine || b.H < 1.35;   // low sports cars sit like the mid-engined ones
     const g = this.group = new THREE.Group(); g.visible = false; car.add(g);
     this.spec = spec; this.style = st;
 

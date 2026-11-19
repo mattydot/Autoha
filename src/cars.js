@@ -133,11 +133,12 @@ function bake(group) {
 /* ------------------------------------------------------------------ */
 /* Wheels                                                              */
 /* ------------------------------------------------------------------ */
-function buildWheel(r, w, detail, sporty, side, rimMat = MATS.rim) {
+function buildWheel(r, w, detail, sporty, side, rimMat = MATS.rim, offroad = false) {
   const g = new THREE.Group();
   const cyl = (rad, len, mat, z = 0, seg = 28) => { const m = mesh(new THREE.CylinderGeometry(rad, rad, len, seg), mat, 0, 0, z); m.rotation.x = Math.PI / 2; return m; };
   const tire = new THREE.Mesh(new THREE.TorusGeometry(r - w * 0.36, w * 0.36, 10, 28), MATS.tire);
   tire.scale.z = 1.38; g.add(tire);
+  if (offroad) for (let i = 0; i < 26; i++) { const a = i / 26 * Math.PI * 2, tb = box(0.07, 0.05, w * 0.96, MATS.tire, Math.cos(a) * (r - 0.012), Math.sin(a) * (r - 0.012), (i % 2 ? 0.02 : -0.02)); tb.rotation.z = a; g.add(tb); }   // chunky all-terrain tread
   g.add(cyl(r * 0.80, w * 0.9, MATS.tire));
   const rr = r * (sporty ? 0.74 : 0.66);
   const face = side * w * 0.42;
@@ -192,11 +193,12 @@ function buildBody(b, mats, detail, cabin = false) {
   const CH = mats.chrome || MATS.chrome;
   const g = new THREE.Group();
   const hl = b.L / 2, W = b.W;
-  const taper = (x) => { const t = Math.min(1, Math.abs(x) / hl); return 1 - (x > 0 ? 0.20 : 0.13) * Math.pow(t, x > 0 ? 3.2 : 4) - (b.midEngine && x > 0 ? 0.06 * t * t : 0); };
+  const K = b.boxy ? 0.3 : 1;      // boxy off-roaders: tight corners, near-vertical sides and glass
+  const taper = (x) => { const t = Math.min(1, Math.abs(x) / hl); return 1 - (x > 0 ? 0.20 : 0.13) * K * Math.pow(t, x > 0 ? 3.2 : 4) - (b.midEngine && x > 0 ? 0.06 * t * t : 0); };
   const belt = Math.min(b.cowlH, b.beltR) - 0.03;
   const tumble = (v) => {
     v.z *= taper(v.x);
-    if (v.y > belt) v.z *= 1 - (b.midEngine ? 0.30 : 0.22) * Math.min(1, (v.y - belt) / (b.H - belt));
+    if (v.y > belt) v.z *= 1 - (b.midEngine ? 0.30 : b.boxy ? 0.07 : 0.22) * Math.min(1, (v.y - belt) / (b.H - belt));
     // lower body tuck-in
     if (v.y < 0.42) v.z *= 1 - 0.05 * (0.42 - v.y) / 0.42;
   };
@@ -215,12 +217,12 @@ function buildBody(b, mats, detail, cabin = false) {
     [hl - 0.28, b.hoodH, 0.30], [hl, b.noseH, 0.12], [hl - 0.04, b.c + 0.05, 0.08], [hl - 0.25, b.c, 0.05],
     // wheel arches cut out of the side, so the tyres sit in an opening instead of passing through the paint
     ...[hl - b.fo, hl - b.fo - b.wb].flatMap((ax) => archPts(ax, b.wheelR + 0.01, b.wheelR + ARCH_GAP, b.c, skinAt(ax) - 0.045)),
-  ], 0.1);
+  ].map((p) => (p[2] ? [p[0], p[1], p[2] * K] : p)), 0.1 * K);
   g.add(mesh(warp(extrude(body, W, 0.09, 4, 10), tumble), mats.paint));
 
   // --- greenhouse ------------------------------------------------------
   const G0 = [b.baseR + 0.02, b.beltR - 0.05], G1 = [b.roofR, b.H], G2 = [b.roofF, b.H - 0.015], G3 = [b.cowlX - 0.02, b.cowlH - 0.05];
-  const gh = roundedPath([[...G0, 0.05], [...G1, 0.22], [...G2, 0.22], [...G3, 0.05]], 0.1);
+  const gh = roundedPath([[...G0, 0.05], [...G1, 0.22 * K], [...G2, 0.22 * K], [...G3, 0.05]], 0.1 * K);
   const ghW = W - 0.10;
   g.add(mesh(warp(extrude(gh, ghW, 0.06, 3, 8), tumble), b.panel ? mats.paint : MATS.glass));
   if (b.panel) { // panel van: glass only at the cab
@@ -285,7 +287,7 @@ function buildBody(b, mats, detail, cabin = false) {
     }
     if (b.flare && !b.midEngine) {   // flared arch: a lip laid on the body side around the opening
       const pts = []; for (let i = 0; i <= 20; i++) { const an = 0.05 + (Math.PI - 0.1) * i / 20, R = b.wheelR + ARCH_GAP + 0.015, x = ax + Math.cos(an) * R, y = b.wheelR + 0.01 + Math.sin(an) * R;
-        if (y < b.c + 0.05) continue; pts.push(new THREE.Vector3(x, y, s * (zAt(x, y) + 0.004))); }
+        if (y < b.c + 0.05 || y > skinAt(x) - 0.05) continue; pts.push(new THREE.Vector3(x, y, s * (zAt(x, y) + 0.004))); }   // stops where the bonnet or a raised wing starts
       if (pts.length > 3) { const tg = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 30, Math.min(0.03, 0.012 + b.flare * 0.25), 6, false); tg.scale(1, 1, 0.45); tg.translate(0, 0, s * (zAt(ax, 0.6) + 0.004) * 0.55); g.add(new THREE.Mesh(tg, mats.paint)); }
     }
   }
@@ -304,15 +306,23 @@ function buildBody(b, mats, detail, cabin = false) {
     case 'big': HL(0.42, 0.11, hy + 0.02, zh); HL(0.40, 0.02, hy - 0.10, zh, 0.01); break;
     case 'y': HL(0.44, 0.045, hy + 0.03, zh - 0.02, -0.06); HL(0.16, 0.035, hy - 0.03, zh + 0.12, -0.02); break;
     case 'quad': for (const o of [-0.20, -0.07, 0.06, 0.19]) HL(0.095, 0.075, hy + 0.02, zh + o - 0.02, -0.03); break;
+    case 'round': {   // round lamps with a DRL ring (off-roaders and the rear-engined coupes)
+      const rr = b.boxy ? 0.11 : 0.1, lx = b.rearEngine ? hl - 0.12 : fx + 0.05, ly = b.rearEngine ? hoodAt(lx) - 0.02 : Math.min(hy + 0.02, lampTop - rr);
+      for (const sd of [-1, 1]) { const lz = sd * (b.rearEngine ? zAt(lx, ly) - 0.2 : zh - 0.02);
+        const hs = mesh(new THREE.CylinderGeometry(rr + 0.02, rr + 0.03, 0.12, 24), MATS.lampHouse, lx - 0.05, ly, lz); hs.rotation.z = Math.PI / 2 + (b.rearEngine ? 0.5 : 0); g.add(hs);
+        const ln = mesh(new THREE.CylinderGeometry(rr * 0.55, rr * 0.55, 0.125, 18), MATS.head, lx - 0.048, ly, lz); ln.rotation.z = hs.rotation.z; g.add(ln);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(rr * 0.85, 0.012, 6, 28), MATS.head); ring.rotation.y = Math.PI / 2; ring.rotation.x = 0; ring.position.set(lx + 0.012 - (b.rearEngine ? 0.03 : 0), ly + (b.rearEngine ? 0.02 : 0), lz); if (b.rearEngine) ring.rotation.z = -0.5; g.add(ring); }
+      break; }
     default: HL(0.42, 0.11, hy, zh);
   }
   const gy = b.noseH - 0.03;
   switch (b.grille) {
     case 'kidney':
       for (const s of [-1, 1]) {
-        g.add(box(0.095, 0.36, 0.3, CH, fx - 0.035, gy + 0.01, s * 0.17));                      // frame
-        g.add(box(0.1, 0.32, 0.26, MATS.black, fx - 0.03, gy + 0.01, s * 0.17));                // mesh
-        for (let k = -2; k <= 2; k++) g.add(box(0.102, 0.3, 0.012, MATS.lampHouse, fx - 0.028, gy + 0.01, s * 0.17 + k * 0.05));
+        const kk = b.kidney || 1, ky = gy + 0.01 + (kk - 1) * 0.12;
+        g.add(box(0.095, 0.36 * kk, 0.3 * Math.sqrt(kk), CH, fx - 0.035, ky, s * 0.17 * Math.sqrt(kk)));                      // frame
+        g.add(box(0.1, 0.32 * kk, 0.26 * Math.sqrt(kk), MATS.black, fx - 0.03, ky, s * 0.17 * Math.sqrt(kk)));                // mesh
+        for (let k = -2; k <= 2; k++) g.add(box(0.102, 0.3 * kk, 0.012, MATS.lampHouse, fx - 0.028, ky, s * 0.17 * Math.sqrt(kk) + k * 0.05));
       }
       g.add(box(0.1, 0.13, W * 0.24, MATS.black, fx - 0.06, b.c + 0.17, W * 0.3)); g.add(box(0.1, 0.13, W * 0.24, MATS.black, fx - 0.06, b.c + 0.17, -W * 0.3));
       break;
@@ -338,6 +348,18 @@ function buildBody(b, mats, detail, cabin = false) {
       g.add(box(0.08, 0.2, 0.33, MATS.black, fx - 0.035, gy - 0.1, 0));
       for (const s of [-1, 1]) g.add(box(0.1, 0.2, W * 0.24, MATS.black, fx - 0.07, b.c + 0.18, s * W * 0.31));
       break; }
+    case 'slats':
+      g.add(box(0.06, 0.42, W * 0.44, mats.paint, fx + 0.02, gy - 0.26, 0));
+      g.add(box(0.07, 0.36, W * 0.4, MATS.black, fx + 0.025, gy - 0.26, 0));
+      for (let k = 0; k < 3; k++) g.add(box(0.08, 0.035, W * 0.4, mats.paint, fx + 0.03, gy - 0.38 + k * 0.12, 0));
+      g.add(box(0.14, 0.2, W * 0.92, MATS.black, fx - 0.02, b.c + 0.22, 0));                       // steel bumper
+      for (const sd of [-1, 1]) g.add(box(0.06, 0.06, 0.06, MATS.amber, fx + 0.0, b.c + 0.3, sd * W * 0.38));
+      break;
+    case 'pana':
+      g.add(box(0.1, 0.36, W * 0.5, MATS.black, fx - 0.04, gy - 0.02, 0));
+      for (let k = -7; k <= 7; k++) g.add(box(0.11, 0.33, 0.016, CH, fx - 0.035, gy - 0.02, k * W * 0.032));
+      for (const sd of [-1, 1]) g.add(box(0.12, 0.17, W * 0.2, MATS.black, fx - 0.06, b.c + 0.15, sd * W * 0.36));
+      break;
     case 'vw':
       g.add(box(0.10, 0.07, W * 0.62, MATS.black, fx - 0.03, gy + 0.06, 0));
       g.add(box(0.105, 0.012, W * 0.64, mats.accent || CH, fx - 0.028, gy + 0.02, 0));
@@ -373,6 +395,24 @@ function buildBody(b, mats, detail, cabin = false) {
       { const blade = box(0.3, 0.022, W * 0.86, MATS.black, rearX + 0.26, b.tailH + 0.2, 0); blade.rotation.z = -0.08; g.add(blade); }
       for (const s of [-1, 1]) { g.add(box(0.12, 0.17, 0.025, MATS.black, rearX + 0.3, b.tailH + 0.1, s * W * 0.27)); g.add(box(0.32, 0.08, 0.015, MATS.black, rearX + 0.26, b.tailH + 0.21, s * W * 0.43)); }
       break;
+  }
+  if (b.wing === 'swan') {   // big wing mounted from above on swan-neck stays, at roof height
+    const wy = b.H - 0.02, wx = rearX + 0.32;
+    const blade = box(0.36, 0.03, W * 0.92, MATS.black, wx, wy, 0); blade.rotation.z = -0.12; g.add(blade);
+    for (const sd of [-1, 1]) { g.add(box(0.42, 0.16, 0.018, MATS.black, wx, wy - 0.02, sd * W * 0.46));
+      const st = box(0.05, wy - b.tailH + 0.05, 0.03, MATS.black, wx + 0.05, (wy + b.tailH) / 2 + 0.02, sd * W * 0.2); st.rotation.z = 0.25; g.add(st); }
+  }
+  if (b.spare) {   // spare wheel on the side-hinged tailgate
+    const sp = mesh(new THREE.CylinderGeometry(b.wheelR * 0.92, b.wheelR * 0.92, 0.26, 24), MATS.tire, rearX - 0.13, b.c + 0.55 + b.wheelR * 0.5, 0); sp.rotation.z = Math.PI / 2; g.add(sp);
+    const cv = mesh(new THREE.CylinderGeometry(b.wheelR * 0.62, b.wheelR * 0.62, 0.03, 24), mats.paint, rearX - 0.27, sp.position.y, 0); cv.rotation.z = Math.PI / 2; g.add(cv);
+    const rg = mesh(new THREE.CylinderGeometry(b.wheelR * 0.66, b.wheelR * 0.66, 0.025, 24), CH, rearX - 0.262, sp.position.y, 0); rg.rotation.z = Math.PI / 2; g.add(rg);
+  }
+  if (b.rack) {    // roof rack with an LED light bar
+    const rl = (b.roofF - b.roofR), rmx = (b.roofF + b.roofR) / 2, rz = (W / 2 - 0.05) * (1 - (b.boxy ? 0.07 : 0.22)) - 0.12;
+    for (const sd of [-1, 1]) g.add(box(rl * 0.92, 0.05, 0.04, MATS.black, rmx, b.H + 0.07, sd * rz));
+    for (let k = 0; k < 4; k++) g.add(box(0.04, 0.035, rz * 2, MATS.black, b.roofR + 0.1 + k * (rl - 0.2) / 3, b.H + 0.08, 0));
+    for (const sd of [-1, 1]) for (const yy of [0.025]) g.add(box(0.04, 0.07 + yy, 0.04, MATS.black, rmx + sd * rl * 0.4, b.H + 0.035, rz));
+    g.add(box(0.08, 0.07, rz * 1.6, MATS.lampHouse, b.roofF - 0.06, b.H + 0.12, 0)); g.add(box(0.085, 0.035, rz * 1.5, MATS.head, b.roofF - 0.058, b.H + 0.12, 0));
   }
   if (b.midEngine) { // engine cover louvres + side intakes
     for (let i = 0; i < 4; i++) { const x = b.roofR - 0.3 - i * 0.22;
@@ -431,10 +471,10 @@ function assemble(b, mats, detail, sporty) {
   for (const k of ['l', 'r']) for (const m of ind[k]) { m.visible = false; indHolder.add(m); }
   car.add(indHolder);
   // wheels
-  const tw = sporty ? 0.30 : 0.22;
+  const tw = b.tyreW || (sporty ? 0.30 : 0.22);
   const wheels = [], front = [];
   for (const [ax, isF] of [[axF, true], [axR, false]]) for (const s of [-1, 1]) {
-    const w = buildWheel(b.wheelR, tw, detail, sporty, s, mats.rim);
+    const w = buildWheel(b.wheelR, tw, detail, sporty, s, mats.rim, b.offroad);
     const steer = new THREE.Group();
     steer.position.set(s * (zAt(ax, 0.3) - tw * 0.5 - 0.005), b.wheelR, -ax);
     w.rotation.y = Math.PI / 2;             // wheel axis: z -> x
@@ -473,7 +513,7 @@ export function buildPlayerCar(spec, colorIndex = 0) {
   paintFinish(paint, spec, colorIndex);
   const roof = spec.twoTone ? new THREE.MeshPhysicalMaterial({ color: spec.twoTone[colorIndex], metalness: 0.55, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.06 }) : paint;
   const tail = tailProto.clone();
-  const plates = { maybach: 'S MB 680', m3: 'M DR 3', rs6: 'IN RS 6', w16: 'W 16 SS', r6: 'WOB R 600', m5b: 'M BK 750' };
+  const plates = { maybach: 'S MB 680', m3: 'M DR 3', rs6: 'IN RS 6', w16: 'W 16 SS', r6: 'WOB R 600', m5b: 'M BK 750', g4: 'GZ G 4', kay: 'S KT 640', xm: 'M XM 748', dakar: 'S DK 911', gt3: 'S RS 525', gtb: 'WN GT 730' };
   const mats = { paint, roof, tail, plate: plateMat(plates[spec.id] || 'A TR ' + spec.sound.cyl),
     rim: spec.blackWheels ? RIM_BLACK : MATS.rim, chrome: spec.blackout ? CHROME_BLACK : null,
     accent: spec.id === 'r6' ? new THREE.MeshStandardMaterial({ color: 0x2a6cff, emissive: 0x0a2050, roughness: 0.4 }) : null };
