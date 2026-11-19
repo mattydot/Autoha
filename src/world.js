@@ -4,6 +4,7 @@
 // that warn about what is ahead and set variable limits.
 import * as THREE from 'three';
 import * as P from './props.js';
+import { Land } from './land.js';
 
 import { PACE } from './pace.js';
 export { PACE };
@@ -150,6 +151,7 @@ export class World {
     this.zones = []; this.blitzers = []; this.events = []; this.closures = []; this.spills = []; this.obstacles = [];
     this.uSnow = { value: 0 };
     this._mats(); this._road(); this._rails(); this._scenery(); this._pools();
+    this.land = new Land(this);
     this.reset();
   }
 
@@ -192,7 +194,10 @@ export class World {
     const z = -(AHEAD - LEN / 2);
     const railGeo = new THREE.BoxGeometry(0.07, 0.3, LEN);
     this.railX = [ROAD.left - 0.55, ROAD.left - 2.55, ROAD.right + 0.65, ROAD.mirror * 2 - ROAD.right - 0.65];
-    for (const x of this.railX) { const r = new THREE.Mesh(railGeo, this.m.steel); r.position.set(x, 0.62, z); g.add(r); }
+    for (const x of this.railX) { if (x === this.railX[2]) continue; const r = new THREE.Mesh(railGeo, this.m.steel); r.position.set(x, 0.62, z); g.add(r); }
+    // right guardrail in 4 m pieces, so it can open where a ramp leaves or joins
+    this.railR = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 0.3, 4.02), this.m.steel, LEN / 4); this.railR.frustumCulled = false; this.scene.add(this.railR);
+    for (let i = 0; i < LEN / 4; i++) this.railR.setMatrixAt(i, new THREE.Matrix4().makeTranslation(this.railX[2], 0.62, -AHEAD + i * 4 + 2));
     const n = LEN / 4, posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.09, 0.7, 0.09), this.m.steel, n * 4), M = new THREE.Matrix4();
     let k = 0; for (const x of this.railX) for (let i = 0; i < n; i++) posts.setMatrixAt(k++, M.makeTranslation(x + (x > 0 || x < -20 ? 0.07 : (x > -8 ? -0.07 : 0.07)), 0.35, -AHEAD + i * 4));
     posts.frustumCulled = false; this.scene.add(posts); this.posts = posts;
@@ -203,6 +208,7 @@ export class World {
     k = 0; for (const x of [ROAD.right + 1.1, ROAD.left - 1.5]) for (let i = 0; i < n2; i++) { const zz = -AHEAD + i * 50;
       lp.setMatrixAt(k, M.makeTranslation(x, 0.5, zz)); band.setMatrixAt(k, M.makeTranslation(x, 0.78, zz)); refl.setMatrixAt(k, M.makeTranslation(x, 0.78, zz + 0.004)); k++; }
     for (const m of [lp, band, refl]) { m.frustumCulled = false; this.scene.add(m); }
+    this.leitR = { x: ROAD.right + 1.1, n: n2 }; this.postN = n;
     this.leit = [lp, band, refl];
     const med = new THREE.Mesh(new THREE.PlaneGeometry(2.8, LEN), new THREE.MeshLambertMaterial({ color: 0x55584f })); med.rotation.x = -Math.PI / 2; med.position.set(ROAD.mirror / 2, 0.005, z); this.scene.add(med);
   }
@@ -283,6 +289,7 @@ export class World {
     for (const g of this.vbas) g.userData.key = '';
     for (const t of this.turbines) { t.userData.s = -1e9; t.position.z = 1e6; }
     for (let i = 0; i < this.treeN; i++) { this.trees[i].s = -1e9; }
+    this.land?.reset(); this._railKey = null;
     this._treeCursor = -200; this._fillTrees(-200, AHEAD);
   }
 
@@ -295,7 +302,8 @@ export class World {
       const s = this._treeCursor, d = this._density(s), t = this.trees[i]; t.s = s;
       const right = Math.random() < 0.5, near = Math.random() < d;
       const off = near ? 6 + Math.pow(Math.random(), 1.6) * 90 : 110 + Math.random() * 420;
-      const x = right ? ROAD.right + off : ROAD.mirror * 2 - ROAD.right - off;
+      let x = right ? ROAD.right + off : ROAD.mirror * 2 - ROAD.right - off;
+      if (right && this.land && !this.land.clear(x, s, 6)) { this.trunks.setMatrixAt(i, Z); this.cones.setMatrixAt(i, Z); this.blobs.setMatrixAt(i, Z); i = (i + 1) % this.treeN; changed = true; continue; }
       const h = 7 + Math.random() * 9, conifer = Math.random() < 0.55;
       p.set(x, 0, -s);
       this.trunks.setMatrixAt(i, M.compose(p, q, sc.set(1, h * 0.45, 1)));
@@ -310,19 +318,22 @@ export class World {
 
   /* ------------------------------ queries ------------------------------ */
   // limit (km/h) that applies at road position s, 0 = unlimited
-  limitAt(s) {
+  limitAt(s, x) {
+    if (x !== undefined && !this.land.onAutobahn(x, s)) return this.land.limitAt(x, s);
     let lim = 0; for (const z of this.zones) if (s >= z.start && s < z.end) lim = minLimit(lim, z.limit);
     if (this.vbaLimit && s >= this.vbaLimit.from && s < this.vbaLimit.until) lim = minLimit(lim, this.vbaLimit.limit);
     return lim;
   }
   // where the walls are at road position s (guardrails, or the beacon line of a closure)
-  bounds(s) {
+  bounds(s, x) {
     let min = WALL_L, max = WALL_R;
     for (const c of this.closures) {
       if (s < c.taper0 || s > c.end + c.out) continue;
       const k = s < c.taper1 ? (s - c.taper0) / (c.taper1 - c.taper0) : s > c.end ? 1 - (s - c.end) / c.out : 1;
       if (c.side > 0) max = Math.min(max, WALL_R + (c.edge - WALL_R) * k); else min = Math.max(min, WALL_L + (c.edge - WALL_L) * k);
     }
+    // off to the right (or where a ramp opens the guardrail): the country-road corridors join in
+    if (x !== undefined && (x > WALL_R - 4 || this.land.railGap(s))) return this.land.corridor(s, x, min, max);
     return { min, max };
   }
   laneClosed(lane, s) { for (const c of this.closures) if (c.lane === lane && s > c.taper0 - 10 && s < c.end) return true; return false; }
@@ -330,6 +341,7 @@ export class World {
   closureAhead(lane, s, look) { let d = Infinity; for (const c of this.closures) if (c.lane === lane && c.end > s && c.taper0 - s < look) d = Math.min(d, Math.max(0, c.taper0 - s)); return d; }
   // grip multiplier from the road surface (spills)
   surface(x, s) {
+    if (x > WALL_R + 0.2) return this.land.surface(x, s);
     const z = -s;
     for (const sp of this.spills) {
       if (z < sp.rect[1] || z > sp.rect[3] || x < sp.rect[0] || x > sp.rect[2]) continue;
@@ -469,7 +481,8 @@ export class World {
   _generate() {
     const horizon = this.s + AHEAD - 100;
     while (this.genEvent < horizon) {
-      const start = Math.max(this.genEvent, this.s + 900), r = Math.random();
+      let start = Math.max(this.genEvent, this.s + 900); const r = Math.random();
+      if (this.land.nearJunction(start, 500) || this.land.nearJunction(start + 2800, 500)) { this.genEvent = start + 700; continue; }
       const end = r < 0.4 ? this._makeZone(start) : r < 0.72 ? this._makeRoadworks(start) : this._makeAccident(start);
       // an LED gantry before roadworks and accidents
       const e = this.events[this.events.length - 1];
@@ -477,12 +490,12 @@ export class World {
       this.genEvent = end + rand(1300, 3600);
     }
     while (this.genVba < horizon) { this._place(this.vbas, this.genVba); this.genVba += rand(1800, 3200); }
-    while (this.genBridge < horizon) { this._place(this.bridges, this.genBridge); this.genBridge += rand(1300, 2800); }
+    while (this.genBridge < horizon) { const L = this.land.L, sb = this.genBridge; if (!this.land.nearJunction(sb, 350) && (!L.has(sb) || L.xAt(sb) > 150)) this._place(this.bridges, sb); this.genBridge += rand(1300, 2800); }
     while (this.genGantry < horizon) { this._place(this.gantries, this.genGantry); this.genGantry += rand(3000, 5200); }
-    while (this.genBoard < horizon) { this._place(this.boards, this.genBoard); this.genBoard += rand(2500, 4200); }
+    while (this.genBoard < horizon) { if (!this.land.nearJunction(this.genBoard, 100)) this._place(this.boards, this.genBoard); this.genBoard += rand(2500, 4200); }
     while (this.genTurbine < horizon) { const n = 1 + ((Math.random() * 3) | 0);
       for (let i = 0; i < n; i++) { let t = this.turbines[0]; for (const o of this.turbines) if (o.userData.s < t.userData.s) t = o;
-        const s = this.genTurbine + i * rand(160, 260); t.userData.s = s; const right = Math.random() < 0.5; t.position.set(right ? rand(180, 520) : -rand(200, 540), 0, -s); t.rotation.y = rand(-0.5, 0.5); }
+        const s = this.genTurbine + i * rand(160, 260); t.userData.s = s; let right = Math.random() < 0.5, tx = right ? rand(180, 520) : -rand(200, 540); if (right && !this.land.clear(tx, s, 30)) tx = rand(760, 980); t.position.set(tx, 0, -s); t.rotation.y = rand(-0.5, 0.5); }
       this.genTurbine += rand(1800, 4200); }
     // forget what is well behind us
     const behind = this.s - 400;
@@ -494,12 +507,32 @@ export class World {
     this.blitzers = this.blitzers.filter((b) => b.s > this.s - 100);
   }
 
+  // open the right guardrail (rail pieces, posts, Leitpfosten) where ramps pass
+  _rightRail(s) {
+    const key = Math.floor(s / 4), anyGap = this.land.gaps.some((g) => g[1] > s - AHEAD && g[0] < s + LEN);
+    if (key === this._railKey || (!anyGap && this._railKey === 'clear')) return;
+    this._railKey = anyGap ? key : 'clear';
+    const M = new THREE.Matrix4(), off = s % 4, n = this.postN, xr = this.railX[2];
+    for (let i = 0; i < n; i++) {
+      const sr = s + AHEAD - i * 4 - off, gap = anyGap && this.land.railGap(sr - 2) && this.land.railGap(sr + 2);
+      this.railR.setMatrixAt(i, gap ? M.makeScale(0, 0, 0) : M.makeTranslation(xr, 0.62, -AHEAD + i * 4 + 2));
+      this.posts.setMatrixAt(2 * n + i, gap ? M.makeScale(0, 0, 0) : M.makeTranslation(xr + 0.07, 0.35, -AHEAD + i * 4));
+    }
+    this.railR.instanceMatrix.needsUpdate = true; this.posts.instanceMatrix.needsUpdate = true;
+    const n2 = this.leitR.n, o2 = s % 50;
+    for (let i = 0; i < n2; i++) { const sr = s + AHEAD - i * 50 - o2, gap = anyGap && this.land.railGap(sr);
+      const zz = -AHEAD + i * 50; for (const m of this.leit) m.setMatrixAt(i, gap ? M.makeScale(0, 0, 0) : M.makeTranslation(this.leitR.x, m === this.leit[0] ? 0.5 : 0.78, zz + (m === this.leit[2] ? 0.004 : 0))); }
+    for (const m of this.leit) m.instanceMatrix.needsUpdate = true;
+  }
+
   update(dt, s, sky) {
     this.s = s; this.frame.position.z = s; this.weather = sky;
     this.roadTex.offset.y = (s / 18) % 1;
     this.grassTex.offset.y = (s / 40) % 1;
-    this.posts.position.z = s % 4; for (const m of this.leit) m.position.z = s % 50;
+    this.posts.position.z = s % 4; this.railR.position.z = s % 4; for (const m of this.leit) m.position.z = s % 50;
+    this.land.update(dt, s, sky);
     this._generate(); this._fillTrees(0, s + AHEAD);
+    this._rightRail(s);
     for (const t of this.turbines) t.userData.rotor.rotation.z += dt * t.userData.speed;
     for (const b of this.blitzerPool) b.userData.flash.opacity = Math.max(0, b.userData.flash.opacity - dt * 5);
     // LED gantries: refresh what they show; passing one sets its limit for the next stretch

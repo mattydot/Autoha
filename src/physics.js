@@ -76,6 +76,10 @@ export function walls(A, bounds, e = 0.2, mu = 0.35) {
     let n = null, depth = 0;
     if (p[0] > bd.max) { n = [1, 0]; depth = p[0] - bd.max; } else if (p[0] < bd.min) { n = [-1, 0]; depth = bd.min - p[0]; }
     if (!n) continue;
+    // walls of a road that curves away from the Autobahn are slanted: use their real direction, so
+    // brushing along the edge of a ramp is a graze, not a head-on hit
+    const b0 = bounds(p[1] - 1), b1 = bounds(p[1] + 1), k = n[0] > 0 ? (b1.max - b0.max) / 2 : (b1.min - b0.min) / 2;
+    if (Math.abs(k) > 0.01 && Math.abs(k) < 3) { const l = Math.hypot(1, k); n = [n[0] / l, -n[0] * k / l]; depth /= l; }
     WALL.x = p[0] + n[0]; WALL.s = p[1];
     const j = resolve(A, WALL, { n, depth, p }, e, mu);
     if (!best || j > best.j) best = { j, n, p, depth };

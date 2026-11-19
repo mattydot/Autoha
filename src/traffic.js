@@ -14,14 +14,14 @@ import { sat, resolve } from './physics.js';
 const KMH = 1 / 3.6;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = THREE.MathUtils.clamp;
-const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, r6: 1520, m5b: 1940, police: 2075, city: 1050, hatch: 1350, mpv: 1700, crossover: 1550, bus: 2300, coupe: 1600, g4: 3020, kay: 2220, xm: 2710, gtb: 1520 };
+const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, r6: 1520, m5b: 1940, police: 2075, tractor: 4200, city: 1050, hatch: 1350, mpv: 1700, crossover: 1550, bus: 2300, coupe: 1600, g4: 3020, kay: 2220, xm: 2710, gtb: 1520 };
 
 export class Traffic {
   constructor(world) {
     this.world = world; this.factory = new TrafficFactory(); world.factory = this.factory;
     this.cars = []; this.oncoming = []; this.pool = {}; this.density = 1; this.police = null;
     this.spawnT = 0;
-    for (const k of [...TRAFFIC_KINDS, 'truck', ...new Set(FAST), 'police']) this.factory._template(k);
+    for (const k of [...TRAFFIC_KINDS, 'truck', 'tractor', ...new Set(FAST), 'police']) this.factory._template(k);
   }
   _get(kind) {
     const p = this.pool[kind] || (this.pool[kind] = []);
@@ -99,8 +99,13 @@ export class Traffic {
     const wetSlow = 1 - 0.14 * sky.wet - 0.2 * sky.snowCover;
     const police = this.cars.filter((c) => c.police && !c.crashed);
 
+    // country roads: a few cars each way on the road the player is on (and the Landstraße)
+    const land = world.land, offA = active && !land.onAutobahn(player.x, player.s);
+    if (offA && (this._landT = (this._landT || 0) - dt) <= 0) { this._landT = 0.6; this._spawnLand(player); }
+
     for (const c of this.cars) {
       if (c.crashed) { this._slide(c, dt); continue; }
+      if (c.land) { this._landDrive(c, dt, player, active); this._visual(c, dt, night, blink, sky); continue; }
       if (c.police && this.police) { this.police.control(c, dt, player, this); this._visual(c, dt, night, blink, sky); continue; }
 
       // --- longitudinal: follow the leader --------------------------------
@@ -163,10 +168,46 @@ export class Traffic {
 
     // despawn
     this.cars = this.cars.filter((c) => {
+      if (c.land && (c.gone || Math.abs(c.s - player.s) > 1000)) { this._release(c); return false; }
       const far = c.police ? (c.leaving && c.s < player.s - 300) || c.s < player.s - 900 || (c.crashed && c.s < player.s - 260) : c.s < player.s - 260 || c.s > player.s + 1100;
       if (far) { this._release(c); return false; } return true;
     });
     this.oncoming = this.oncoming.filter((c) => { if (c.s < player.s - 120) { this._release(c); return false; } return true; });
+  }
+
+  // keep about six cars on the country roads near the player, some of them coming the other way
+  _spawnLand(player) {
+    const L = this.world.land, mine = L.roadAt(player.x, player.s), here = this.cars.filter((c) => c.land).length;
+    if (here >= 6) return;
+    const roads = L.roadsAt(player.s + 400).filter((r) => r.kind === 'land' || r.kind === 'kreis');
+    const r = mine && (mine.kind === 'land' || mine.kind === 'kreis') && Math.random() < 0.75 ? mine : roads[(Math.random() * roads.length) | 0];
+    if (!r) return;
+    const dir = Math.random() < 0.55 ? -1 : 1, tractor = dir > 0 && Math.random() < 0.16;
+    const s = player.s + (dir > 0 ? rand(260, 600) : rand(450, 900)); if (!r.has(s)) return;
+    for (const c of this.cars) if (c.land === r && c.dir === dir && Math.abs(c.s - s) < 60) return;
+    const kind = tractor ? 'tractor' : Math.random() < 0.1 ? 'van' : everyday();
+    const vd = (tractor ? rand(24, 32) : r.kind === 'kreis' ? rand(68, 85) : rand(82, 102)) / 3.6;
+    const c = this.add(kind, 0, s, vd * dir, { land: r, dir, vd, speed: vd, passed: dir > 0 ? false : false });
+    c.x = r.xAt(s) + dir * this._laneOff(r);
+  }
+  _laneOff(r) { return r.kind === 'land' ? 1.75 : r.kind === 'kreis' ? 1.35 : 0; }
+  // drive along a country road: keep right, slow for curves and for whoever is ahead in the lane
+  _landDrive(c, dt, player, active) {
+    let r = c.land;
+    const look = c.s + c.dir * 35, k = r.has(look) ? Math.abs(r.curv(look)) : 0;
+    const vCurve = k > 2e-4 ? Math.sqrt(3.2 / (k * PACE)) : 99;
+    let vt = Math.min(c.vd, vCurve, (r.limitAt(c.s) || 100) / 3.6 + 1);
+    let gap = 1e9, lead = null; const lx = (s) => r.xAt(s) + c.dir * this._laneOff(r);
+    for (const o of this.cars) { if (o === c || !o.land || o.land !== r || o.dir !== c.dir) continue; const g = (o.s - c.s) * c.dir - (o.L + c.L) / 2; if (g > -2 && g < gap) { gap = g; lead = o.crashed ? 0 : o.speed; } }
+    if (active && Math.abs(player.x - lx(player.s)) < 2.2) { const g = (player.s - c.s) * c.dir - (player.L + c.L) / 2; if (g > -2 && g < gap) { gap = g; lead = Math.max(0, player.v * c.dir); } }
+    const safe = (5 + c.speed * 0.8) * PACE;
+    if (lead !== null && gap < safe * 1.6) vt = Math.min(vt, gap < safe ? lead * Math.max(0, gap / safe) : lead);
+    const acc = clamp((vt - c.speed) * 1.1, gap < 8 ? -9 : -5, c.kind === 'tractor' ? 0.5 : 2);
+    c.speed = Math.max(0, c.speed + acc * dt); c.brake = acc < -1.2 ? 1 : 0;
+    c.s += c.dir * c.speed * dt * PACE;
+    if (!r.has(c.s)) { if (r.joins && r.joins.has(c.s)) c.land = r = r.joins; else { c.gone = true; return; } }
+    const sl = r.slope(c.s); c.x = lx(c.s);
+    c.vs = c.dir * c.speed; c.vx = sl * c.vs; c.psi = Math.atan2(c.vx, c.vs); c.r = 0; c.ind = 0;
   }
 
   // a car out of control: tyres locked, sliding and spinning to a stop
@@ -174,7 +215,7 @@ export class Traffic {
     const sp = Math.hypot(c.vx, c.vs);
     if (sp > 0.05) { const d = Math.min(sp, 7.5 * dt); c.vx -= c.vx / sp * d; c.vs -= c.vs / sp * d; } else { c.vx = c.vs = 0; c.stopped = true; }
     c.r *= Math.exp(-dt * 1.8); c.psi += c.r * dt; c.x += c.vx * dt * PACE; c.s += c.vs * dt * PACE;
-    const b = this.world.bounds(c.s), hw = (Math.abs(c.L * Math.sin(c.psi)) + Math.abs(c.W * Math.cos(c.psi))) / 2;
+    const b = this.world.bounds(c.s, c.x), hw = (Math.abs(c.L * Math.sin(c.psi)) + Math.abs(c.W * Math.cos(c.psi))) / 2;
     if (c.x + hw > b.max) { c.x = b.max - hw; c.vx = -Math.abs(c.vx) * 0.2; c.r *= 0.6; }
     if (c.x - hw < b.min) { c.x = b.min + hw; c.vx = Math.abs(c.vx) * 0.2; c.r *= 0.6; }
     c.lane = LANES.reduce((best, l, i) => (Math.abs(l - c.x) < Math.abs(LANES[best] - c.x) ? i : best), 0); c.toLane = c.lane;
@@ -186,7 +227,7 @@ export class Traffic {
   _visual(c, dt, night, blink, sky) {
     const m = c.mesh, u = m.userData;
     m.position.set(c.x, 0, -c.s); m.rotation.y = -c.psi;
-    const spin = c.vs * dt * PACE / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
+    const spin = c.vs * (c.dir || 1) * dt * PACE / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
     u.tail.emissiveIntensity = c.brake ? 7 : 0.25 + night * 1.6 + sky.cur.rain * 0.8;
     for (const i of u.ind.l) i.visible = c.ind < 0 && blink; for (const i of u.ind.r) i.visible = c.ind > 0 && blink;
   }

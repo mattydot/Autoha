@@ -141,6 +141,7 @@ function readInput(dt) {
   if (touchMode) { t = Math.max(t, tc.throttle); b = Math.max(b, tc.brake); if (tc.steer) s = tc.steer; }
   const gp = navigator.getGamepads ? navigator.getGamepads()[0] : null;
   if (gp) { if (Math.abs(gp.axes[0]) > 0.12) s = gp.axes[0]; t = Math.max(t, gp.buttons[7]?.value || 0, gp.buttons[0]?.value || 0); b = Math.max(b, gp.buttons[6]?.value || 0); }
+  const bot = window.__bot; if (bot) { t = bot.throttle; b = bot.brake; s = bot.steer; }   // test drivers (like a gamepad)
   input.throttle = t; input.brake = b; input.steer += (s - input.steer) * Math.min(1, dt * (14 + 8 * clamp(1 - veh.speed / 36, 0, 1)));   // snappier at low speed
 }
 
@@ -215,7 +216,7 @@ function physics(dt, driving) {
   for (let k = 0; k < n; k++) {
     veh.step(h, inp, env);
     // guardrails and closures
-    const hw = walls(veh, (s) => world.bounds(s), 0.2, 0.35);
+    const hw = walls(veh, (s) => world.bounds(s, veh.x), 0.2, 0.35);
     if (hw && hw.j > 0) {
       const dv = hw.j / veh.m;
       if (dv > 0.6) hurt(dv, 'wall');
@@ -275,11 +276,22 @@ function recover() {
 
 /* ------------------------------ scoring & rules ------------------------------ */
 function rules(dt) {
-  const vk = veh.vs * KMH, limit = world.limitAt(veh.s);
+  const vk = veh.vs * KMH, limit = world.limitAt(veh.s, veh.x);
   run.time += dt; run.top = Math.max(run.top, veh.speed);
   if (run.wreckT <= 0) run.score += Math.max(0, veh.vs) * dt * 0.1 * Math.pow(Math.max(0, vk) / 100, 2);
   if (run.comboT > 0) { run.comboT -= dt; if (run.comboT <= 0) run.combo = 0; }
-  if (limit !== run.limit) { if (limit) toast(`TEMPOLIMIT ${limit}`, 'Blitzer ahead? Maybe.', ''); else toast('FREIE FAHRT', 'End of all restrictions', 'good'); run.limit = limit; }
+  // which road we are on: announce it when it changes (off the Autobahn, onto a Feldweg, back on)
+  const rd = world.land.onAutobahn(veh.x, veh.s) ? null : world.land.roadAt(veh.x, veh.s), rk = rd ? rd.kind + rd.id : 'A';
+  if (rk !== run.roadKey && run.time > 0.5) {
+    const was = run.roadKind; run.roadKey = rk; run.roadKind = rd ? rd.kind : 'A';
+    if (!rd) { if (was && was !== 'A') toast('AUTOBAHN', 'Back on the A 9', 'good'); }
+    else if (rd.kind === 'ramp') { const j = world.land.junctions.find((q) => q.exit === rd || q.entry === rd); toast(rd.toAutobahn ? 'AUFFAHRT' : `AUSFAHRT ${j ? j.no : ''}`, rd.toAutobahn ? 'A 9 · München' : j ? j.name : '', ''); }
+    else if (rd.kind === 'land' && was !== 'land') toast('LANDSTRASSE', 'Limit 100 · mind the curves and tractors', '');
+    else if (rd.kind === 'kreis') toast('KREISSTRASSE', 'Narrow and quiet', '');
+    else if (rd.kind === 'dirt') toast('FELDWEG', 'Gravel · Landwirtschaftlicher Verkehr frei', '');
+  } else if (run.time <= 0.5) { run.roadKey = rk; run.roadKind = rd ? rd.kind : 'A'; }
+  const onA = !rd;
+  if (limit !== run.limit) { if (limit) toast(`TEMPOLIMIT ${limit}`, onA ? 'Blitzer ahead? Maybe.' : '', ''); else if (onA) toast('FREIE FAHRT', 'End of all restrictions', 'good'); run.limit = limit; }
   for (const b of world.blitzers) if (!b.done && veh.s > b.s) {
     b.done = true; const over = vk - b.limit;
     if (over > 9) { const fine = Math.round(over * 15); run.score = Math.max(0, run.score - fine); run.fines++; b.obj.userData.flash.opacity = 1; audio.blitz();
@@ -295,7 +307,7 @@ function rules(dt) {
     if (!c.passed && veh.s - veh.L / 2 > c.s - c.L * 0.25) {
       c.passed = true; const gap = Math.abs(dx) - sw, dvk = (veh.vs - c.vs) * KMH;
       if (gap < 5 && dvk > 15) audio.whoosh(clamp((c.x - veh.x) / 4, -1, 1), clamp(dvk / 200, 0, 1) * (c.kind === 'truck' ? 1.3 : 1));
-      if (gap < 1.15 && gap > 0.02 && dvk > 30 && !c.touched && run.wreckT <= 0 && !c.police) {
+      if (gap < 1.15 && gap > 0.02 && dvk > 30 && !c.touched && run.wreckT <= 0 && !c.police && c.dir !== -1) {
         run.combo = Math.min(9, run.combo + 1); run.comboT = 5; run.near++; const pts = Math.round((100 + dvk) * run.combo); run.score += pts;
         toast(`NEAR MISS ×${run.combo}`, `+${pts}`, 'good'); audio.bonus(); haptic(12);
       }
@@ -345,6 +357,8 @@ function updateCar(dt) {
     const n = veh.spec.body.exhaust === 'quad' ? [-0.55, 0.55] : [-0.12, 0.12], side = n[(Math.random() * n.length) | 0];
     carMesh.localToWorld(_v.set(side, veh.spec.body.c + 0.1, veh.L / 2 + 0.08)); fx.flame(_v.x, _v.y, -_v.z + world.s, veh.vx, veh.vs); audio.pop(snd.gain);
   }
+  // gravel: a dust trail behind the car on a Feldweg
+  if (mode === 'play' && run.roadKind === 'dirt' && veh.speed > 7 && Math.random() < dt * Math.min(14, veh.speed * 0.5)) { carMesh.localToWorld(_v.set((Math.random() - 0.5) * veh.W, 0.3, veh.L / 2)); fx.puff(_v.x, 0.35, -_v.z + world.s, veh.vx * 0.3, veh.vs * 0.4, 1, false, 1.6 + veh.speed * 0.03); }
   if (veh.wrecked && Math.random() < dt * 6) { carMesh.localToWorld(_v.set(0, 0.9, -veh.L / 2 + 0.6)); fx.puff(_v.x, _v.y, -_v.z + world.s, 0, 0, 1, true, 1.6); }
 }
 
@@ -391,7 +405,7 @@ function updateCamera(dt, t) {
     _t.set(veh.x + syw * 14, camMode === 0 ? 1.05 : 0.8, pz - cy * (camMode === 0 ? 16 : 20));
     if (veh.rolling) _t.set(veh.x, veh.yc, pz);
     const fov = viewFov(56 + 30 * vn * vn / (0.35 + vn));
-    const k = (shake + vn * vn * vn * 0.045) * sh;
+    const k = (shake + vn * vn * vn * 0.045 + (run.roadKind === 'dirt' ? Math.min(0.05, veh.speed * 0.0025) : 0)) * sh;   // gravel rumbles
     camera.position.x += (Math.random() - 0.5) * k; camera.position.y += (Math.random() - 0.5) * k * 0.7;
     camera.fov += (fov - camera.fov) * Math.min(1, dt * 4);
   } else {

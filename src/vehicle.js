@@ -82,7 +82,7 @@ export class Vehicle {
     const agile = 1 + 0.35 * low + 0.24 * mid;
     const muF = (muFL + muFR) / 2 * 1.05 * agile, muR = (muRL + muRR) / 2 * 1.05 * rearBias * agile;
     this.mu = (muF + muR) / 2; this.muBase = env.base;
-    this.onSlick = Math.min(muFL, muFR, muRL, muRR) < env.base * 0.6;
+    this.onSlick = Math.min(muFL, muFR, muRL, muRR) < env.base * 0.45;   // oil or milk, not a wheel on the grass
 
     // gearbox and engine
     let rpm = Math.max(spec.idle, spec.redline * au / this.gearV[this.gear - 1]);

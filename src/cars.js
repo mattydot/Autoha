@@ -558,6 +558,33 @@ function buildTruck() {
   return g;
 }
 
+// farm tractor (green, big rear wheels, glass cab, orange beacon), for the country roads
+function buildTractor() {
+  const g = new THREE.Group(), h = new THREE.Group();
+  const paint = new THREE.MeshStandardMaterial({ color: 0x2f7a35, roughness: 0.5, metalness: 0.3 }), tail = tailProto.clone();
+  const L = 4.6, W = 2.3, front = -L / 2;
+  h.add(box(0.9, 0.9, 2.2, paint, 0, 1.25, front + 1.2));                    // bonnet
+  h.add(box(0.95, 0.12, 2.25, MATS.black, 0, 0.78, front + 1.2));
+  h.add(box(0.8, 0.5, 0.06, MATS.black, 0, 1.3, front - 0.01));               // grille
+  h.add(box(1.5, 1.6, 1.5, MATS.glass, 0, 2.35, 0.75));                        // glass cab
+  for (const x of [-0.72, 0.72]) for (const z of [0.02, 1.48]) h.add(box(0.07, 1.6, 0.07, MATS.black, x, 2.35, z));
+  h.add(box(1.65, 0.1, 1.65, paint, 0, 3.2, 0.75));                           // roof
+  h.add(box(0.14, 0.12, 0.14, MATS.amber, 0.5, 3.3, 0.75));                    // beacon
+  h.add(box(1.6, 0.5, 0.9, paint, 0, 1.2, 1.9));                              // rear body
+  for (const sd of [-1, 1]) { h.add(box(0.2, 0.08, 0.08, MATS.head, sd * 0.3, 1.45, front - 0.03)); h.add(box(0.12, 0.08, 0.06, tail, sd * 0.7, 1.2, L / 2 - 0.1));
+    const fen = box(0.62, 0.08, 1.5, paint, sd * 0.95, 1.95, 1.45); g.add(fen); }
+  h.add(box(0.52, 0.115, 0.02, MATS.plate, 0, 0.9, L / 2 - 0.05));
+  g.add(bake(h));
+  const wheels = [];
+  for (const [z, r, w] of [[front + 1.0, 0.5, 0.36], [1.45, 0.82, 0.55]]) for (const sd of [-1, 1]) {
+    const wh = buildWheel(r, w, false, false, sd, MATS.rim, true); wh.rotation.y = Math.PI / 2; wh.position.set(sd * (W / 2 - w / 2), r, z); g.add(wh); wheels.push(wh.userData.spin); }
+  const ind = { l: [], r: [] };
+  for (const [sd, k] of [[-1, 'l'], [1, 'r']]) { const a = box(0.1, 0.08, 0.06, MATS.amber, sd * 0.8, 1.35, L / 2 - 0.08); a.visible = false; g.add(a); ind[k].push(a); }
+  g.add(shadowMesh(L, W));
+  g.userData = { wheels, front: [], ind, L, W, H: 3.2, wheelR: 0.82, paint, tail, colors: [0x2f7a35, 0x2f7a35, 0xc8202a, 0x1f4fa0] };
+  return g;
+}
+
 // Traffic factory: prebuilt templates, cheap per-instance clones
 // Autobahnpolizei estate: silver with blue and yellow livery, roof light bar
 function textTex(text, color, w = 512, h = 96) {
@@ -661,6 +688,7 @@ export class TrafficFactory {
     let t;
     if (kind === 'truck') t = buildTruck();
     else if (kind === 'police') t = buildPolice();
+    else if (kind === 'tractor') t = buildTractor();
     else {
       const sport = CARS.find((c) => c.id === kind);
       const b = sport ? sport.body : TRAFFIC_BODIES[kind];
