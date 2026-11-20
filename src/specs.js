@@ -151,7 +151,7 @@ export const CARS = [
   },
   {
     id: 'dakar', name: 'ZUFFENHAUSEN ELF DAKAR', sub: 'Raised · rally sports car',
-    engine: '3.0 L flat-6 twin-turbo', ps: 480, mass: 1605, vmax: 240, zeroTo100: 3.4, cg: 0.55, front: 0.39,
+    engine: '3.0 L flat-6 twin-turbo', ps: 480, mass: 1605, vmax: 240, zeroTo100: 3.4, cg: 0.55, front: 0.44,
     handling: 1.0, awd: true, gears: 8, redline: 7500, idle: 800,
     colors: [0xf2f2ee, 0x2e5e3e, 0x1c3b70, 0xd4b48a, 0x16171a, 0xc8102e],
     sound: { cyl: 6, f1: 160, f2: 640, bright: 0.85, decay: 110, rasp: 0.55, turbo: 0.6, pops: 0.6, uneven: 0.25, gain: 1.05 },
@@ -165,7 +165,7 @@ export const CARS = [
   },
   {
     id: 'gt3', name: 'ZUFFENHAUSEN ELF GT3 RS', sub: 'Rear-drive · track weapon',
-    engine: '4.0 L flat-6 naturally aspirated', ps: 525, mass: 1450, vmax: 296, zeroTo100: 3.2, cg: 0.46, front: 0.39, drift: 2.2,
+    engine: '4.0 L flat-6 naturally aspirated', ps: 525, mass: 1450, vmax: 296, zeroTo100: 3.2, cg: 0.46, front: 0.44,
     handling: 1.14, awd: false, gears: 7, redline: 9000, idle: 950,
     colors: [0x9ad12b, 0xf2f2f2, 0x1d3f9a, 0x8a8f96, 0xd21a2a, 0x111114], blackWheels: true,
     sound: { cyl: 6, f1: 180, f2: 760, bright: 1.0, decay: 130, rasp: 0.7, turbo: 0, pops: 0.7, uneven: 0.12, gain: 1.1 },

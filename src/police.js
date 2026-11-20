@@ -1,9 +1,15 @@
-// Autobahnpolizei. A chase starts after a hit-and-run (touching another car
-// and driving on) or extreme speeding past a speed camera. Patrol cars come
-// up from behind (and one waits further ahead), then try to box the player
-// in: one behind, one in front, one on each side, but never on a side where
-// there is no lane. Box the player in and bring them to a stop and it is
-// over. Outrun them, or keep away until they give up, and you are free.
+// Autobahnpolizei. After a hit-and-run (touching another car and driving on)
+// or extreme speeding past a speed camera, it escalates in three steps:
+//  1. ANHALTEN: one patrol car comes up behind with blue lights (no siren),
+//     overtakes, shows BITTE FOLGEN, slows down and pulls onto the hard
+//     shoulder. Follow it and stop behind it: a ticket, and you drive on.
+//  2. VERFOLGUNG: ignore it (pass it, run, or drive off) and the siren comes
+//     on, backup arrives and they try to box you in: one behind, one in
+//     front, one on each side. Stopped inside the box: arrested.
+//  3. GROSSFAHNDUNG: still running after a while, and more cars join and
+//     they get rough: hard brake checks, shoving from the side and behind.
+// Outrun them, or keep away until they give up, and you are free. Ramming a
+// patrol car skips straight to the chase.
 import { LANES, PACE } from './world.js';
 import { POLICE_SIGN } from './cars.js';
 
@@ -13,7 +19,21 @@ export const POLICE_VMAX = 330 / 3.6;     // upgraded RS6 pursuit cars
 
 export class Police {
   constructor() { this.reset(); }
-  reset() { this.active = false; this.heat = 0; this.t = 0; this.queue = []; this.bustT = 0; this.slots = []; this.reason = ''; this._assignT = 0; this.cars = []; this.trail = []; }
+  reset() { this.active = false; this.heat = 0; this.t = 0; this.queue = []; this.bustT = 0; this.slots = []; this.reason = ''; this._assignT = 0; this.cars = []; this.trail = [];
+    this.phase = 'off'; this.defy = 0; this.stopT = 0; this.phaseT = 0; this.msgs = []; this.n = 3; this._warned = 0; this.farT = 0; }
+  _msg(title, sub, kind = 'bad') { this.msgs.push({ title, sub, kind }); }
+  get lead() { return this.cars.find((c) => c.role === 'lead' && !c.crashed && !c.leaving); }
+
+  // from the polite stop to a proper chase: siren, backup, boxing in
+  escalate(why) {
+    if (this.phase !== 'stop') return;
+    this.phase = 'chase'; this.phaseT = 0; this.defy = 0; this.stopT = 0; this.heat = Math.max(this.heat, 70);
+    for (const c of this.cars) c.role = null;
+    const t = this.t; this.queue.push({ at: t + 1.2, where: 'behind', lane: 0 }, { at: t + 2.6, where: 'behind', lane: 2 });
+    if (this.n >= 3) this.queue.push({ at: t + 6, where: 'ahead' });
+    if (this.n >= 4) this.queue.push({ at: t + 10, where: 'behind' });
+    this._msg('VERFOLGUNG', why || 'Anhaltesignal ignoriert · Verstärkung kommt');
+  }
 
   // the road the player was on when they passed road position s (null = the Autobahn); used to follow them off it
   roadFor(s) { let r = undefined; for (const t of this.trail) { if (t.s > s) break; r = t.road; } return r === undefined ? (this.trail[0]?.road ?? null) : r; }
@@ -23,11 +43,13 @@ export class Police {
   /** returns true if this starts a new chase */
   trigger(reason, heat, n) {
     this.reason = reason;
-    if (this.active) { this.heat = Math.min(120, Math.max(this.heat, heat) + 10); if (this.chasing.length + this.queue.length < 4) this.queue.push({ at: this.t + 3, where: 'behind' }); return false; }
-    this.active = true; this.heat = heat; this.t = 0; this.bustT = 0;
-    this.queue = [{ at: 0.4, where: 'behind', lane: 0 }, { at: 1.4, where: 'behind', lane: 2 }];
-    if (n >= 3) this.queue.push({ at: 5, where: 'ahead' });
-    if (n >= 4) this.queue.push({ at: 9, where: 'behind' });
+    if (this.active) {
+      if (this.phase === 'stop') { this.escalate(reason === 'WIDERSTAND' ? 'Streifenwagen gerammt' : 'Noch ein Verstoß'); return false; }
+      this.heat = Math.min(120, Math.max(this.heat, heat) + 10); if (this.chasing.length + this.queue.length < 4) this.queue.push({ at: this.t + 3, where: 'behind' }); return false; }
+    this.active = true; this.heat = heat; this.t = 0; this.bustT = 0; this.n = n; this.defy = 0; this.stopT = 0; this.phaseT = 0; this._warned = 0; this.farT = 0;
+    if (reason === 'WIDERSTAND') { this.phase = 'stop'; this.queue = []; this.escalate('Widerstand'); return true; }
+    // first, a single car to pull the driver over politely
+    this.phase = 'stop'; this.queue = [{ at: 0.4, where: 'behind', role: 'lead' }];
     return true;
   }
 
@@ -35,15 +57,15 @@ export class Police {
     const land = traffic.world.land;
     if (!land.onAutobahn(player.x, player.s)) {   // off the Autobahn: come up behind on the road the player took
       const s = player.s - rand(240, 330), rd = this.roadFor(s);
-      const c = traffic.add('police', 2, s, clamp(player.v + 15, 30, POLICE_VMAX), { police: true, slot: null, leaving: false, wait: false });
-      if (rd && rd.has(s)) c.x = rd.xAt(s) + (rd.kind === 'ramp' ? 0 : 1.75);
+      const c = traffic.add('police', 2, s, clamp(player.v + 15, 30, POLICE_VMAX), { police: true, slot: null, leaving: false, wait: false, role: q.role || null, pull: 'approach', pullT: 0 });
+      if (rd && rd.has(s)) c.x = rd.xAt(s) + (rd.kind === 'ramp' ? 0 : 2.2);
       this.cars.push(c); return;
     }
     let lane = q.lane ?? ((Math.random() * 3) | 0), s, v;
     if (q.where === 'ahead') { s = player.s + rand(650, 800); v = 22; lane = 2; }
     else { s = player.s - rand(230, 320); v = clamp(player.v + 22, 45, POLICE_VMAX); }
     for (let k = 0; k < 3 && !traffic._free(lane, s, 30, 30); k++) lane = (lane + 1) % 3;
-    const c = traffic.add('police', lane, s, v, { police: true, slot: null, leaving: false, wait: q.where === 'ahead' });
+    const c = traffic.add('police', lane, s, v, { police: true, slot: null, leaving: false, wait: q.where === 'ahead', role: q.role || null, pull: 'approach', pullT: 0 });
     this.cars.push(c);
   }
 
@@ -58,7 +80,8 @@ export class Police {
   /** per frame. Returns 'busted' | 'escaped' | 'gaveup' | null */
   update(dt, player, traffic) {
     this.cars = this.cars.filter((c) => traffic.cars.includes(c));
-    POLICE_SIGN.draw(!this.active ? 'POLIZEI' : ((performance.now() / 1200) | 0) % 2 ? 'BITTE FOLGEN' : 'POLIZEI');
+    const blink = ((performance.now() / 1100) | 0) % 2;
+    POLICE_SIGN.draw(!this.active ? 'POLIZEI' : this.phase === 'stop' ? (this.lead && this.lead.pull !== 'approach' ? 'BITTE FOLGEN' : blink ? 'POLIZEI' : 'BITTE FOLGEN') : blink ? 'STOP POLIZEI' : 'POLIZEI');
     // remember which road the player is on, every 8 m, for the patrol cars that follow
     const land = traffic.world.land, off = !land.onAutobahn(player.x, player.s), rd = off ? land.roadAt(player.x, player.s) : null;
     const last = this.trail[this.trail.length - 1];
@@ -68,6 +91,13 @@ export class Police {
     if (!this.active) return null;
     this.t += dt;
     while (this.queue.length && this.queue[0].at <= this.t) this._spawn(this.queue.shift(), player, traffic);
+    this.phaseT += dt;
+    if (this.phase === 'stop') return this._stopPhase(dt, player);
+    if (this.phase === 'chase' && this.phaseT > 32 && this.heat > 25) {   // still running: Großfahndung
+      this.phase = 'hunt'; this.phaseT = 0; this.heat = Math.min(120, this.heat + 25);
+      this.queue.push({ at: this.t + 1, where: 'behind', lane: 1 }, { at: this.t + 4, where: 'ahead' });
+      this._msg('GROSSFAHNDUNG', 'Mehr Streifen · sie werden ruppig');
+    }
     const live = this.chasing;
     // who takes which position around the player
     this._assignT -= dt;
@@ -94,22 +124,76 @@ export class Police {
     return null;
   }
 
+  // polite stop: watch whether the driver follows the patrol car and stops behind it
+  _stopPhase(dt, player) {
+    const c = this.lead;
+    if (!c) { if (this.queue.length) return null; this.escalate('Streifenwagen ausgefallen'); return null; }
+    const rel = c.s - player.s, ahead = c.pull !== 'approach';
+    // running away before they even catch up
+    if (rel < -420) this.farT += dt; else this.farT = Math.max(0, this.farT - dt);
+    if (this.farT > 5) { this.escalate('Flucht vor der Polizei'); return null; }
+    if (ahead) {
+      const passed = rel < -8 && c.pull !== 'pass', left = Math.abs(c.x - player.x) > 25, fast = player.v > c.vs + 9 && rel < 30;
+      if (passed || left || fast) this.defy += dt; else this.defy = Math.max(0, this.defy - dt * 0.6);
+      if (this.defy > 1.2 && this._warned < 2) { this._warned = 2; this._msg('BITTE FOLGEN!', 'Hinter dem Streifenwagen bleiben und anhalten'); }
+      if (this.defy > 3.5) { this.escalate(passed ? 'Streifenwagen überholt' : left ? 'Abgefahren statt zu folgen' : 'Davongerast'); return null; }
+    }
+    // pulled over: both stopped, the driver right behind the patrol car
+    if (c.pull === 'stopped' && player.speed < 1 && rel > 2 && rel < 45 && Math.abs(c.x - player.x) < 6) this.stopT += dt; else this.stopT = Math.max(0, this.stopT - dt);
+    if (this.stopT > 2.5) { this.active = false; this.phase = 'off'; this.queue = []; for (const k of this.cars) { k.leaving = true; k.slot = null; k.role = null; } return 'ticket'; }
+    return null;
+  }
+
+  // the polite lead car: where it wants to be (lane x and speed) on the Autobahn
+  _leadTarget(c, dt, player) {
+    const pl = LANES.reduce((b, l, i) => (Math.abs(l - player.x) < Math.abs(LANES[b] - player.x) ? i : b), 0);
+    const rel = c.s - player.s, dp = (ds) => { const d = (player.s + ds - c.s) / PACE; return clamp(player.v + Math.sign(d) * Math.min(Math.sqrt(2 * 5 * Math.abs(d)), Math.abs(d) * 1.1), 0, POLICE_VMAX); };
+    c.pullT += dt;
+    switch (c.pull) {
+      case 'approach': {   // lights on, sit behind the driver for a moment
+        if (Math.abs(rel + 16) < 14) { c.nearT = (c.nearT || 0) + dt; if (!this._warned) { this._warned = 1; this._msg('POLIZEI', 'Blaulicht hinter dir · Anhaltesignal folgt', ''); } }
+        if ((c.nearT || 0) > 2.5 || (player.speed < 3 && rel > -60)) { c.pull = 'pass'; c.pullT = 0; }
+        return [LANES[pl], Math.min(dp(-16), player.v + 16)]; }   // close in calmly
+      case 'pass': {        // overtake in the next lane
+        const lane = pl > 0 ? pl - 1 : pl + 1;
+        if (rel > 18) { c.pull = 'lead'; c.pullT = 0; c.leadV = clamp(player.v, 20, 130 / 3.6); this._msg('BITTE FOLGEN', 'Dem Streifenwagen folgen · er führt dich raus', ''); }
+        return [LANES[lane], Math.min(POLICE_VMAX, Math.max(player.v + 9, dp(24)))]; }
+      case 'lead': {        // in front, slowing down gently to 80
+        c.leadV = Math.max(80 / 3.6, c.leadV - 0.7 * dt);
+        if (c.pullT > 9 && c.leadV <= 80 / 3.6 + 0.5 && rel > 4 && rel < 80) { c.pull = 'pull'; c.pullT = 0; this._msg('ANHALTEN', 'Rechts auf den Seitenstreifen', ''); }
+        return [LANES[pl], rel > 70 ? c.leadV * 0.75 : rel < 12 ? c.leadV + 2 : c.leadV]; }
+      case 'pull': {        // onto the hard shoulder and stop
+        c.leadV = Math.max(0, c.leadV - (c.x > 6 ? 2.2 : 0.6) * dt); if (c.leadV < 0.3 && c.vs < 0.5) { c.pull = 'stopped'; c.pullT = 0; }
+        return [7.0, c.leadV]; }
+      default: return [7.0, 0];
+    }
+  }
+
   // pursuit on country roads and ramps: follow the player's route, one car on the bumper, one gets in front
   _landControl(c, dt, player, traffic) {
     const land = traffic.world.land;
     let rd = c.s <= player.s ? this.roadFor(c.s) : land.roadAt(player.x, player.s);
     if (!rd || !rd.has(c.s)) rd = land.roadAt(c.x, c.s) || rd;
-    const live = this.chasing, idx = live.indexOf(c), front = idx === 1, ds = front ? 18 : idx === 0 ? -13 : -13 - (idx - 1) * 16;
+    const live = this.chasing, idx = live.indexOf(c), isLead = this.phase === 'stop' && c.role === 'lead';
+    const front = isLead ? c.pull !== 'approach' : idx === 1, ds = isLead ? (c.pull === 'approach' ? -15 : 18) : front ? 18 : idx === 0 ? -13 : -13 - (idx - 1) * 16;
+    if (isLead) { c.pullT += dt; if (c.pull === 'approach' && (Math.abs(c.s - player.s + 15) < 12 ? (c.nearT = (c.nearT || 0) + dt) > 2.5 : false)) { c.pull = 'pass'; c.pullT = 0; this._msg('POLIZEI', 'Blaulicht hinter dir · Anhaltesignal folgt', ''); }
+      if (c.pull === 'pass' && c.s > player.s + 16) { c.pull = 'lead'; c.pullT = 0; c.leadV = clamp(player.v, 15, 90 / 3.6); this._msg('BITTE FOLGEN', 'Dem Streifenwagen folgen und anhalten', ''); } }
     const d = player.s + ds - c.s;
     // close in no faster than they can still brake for (about 6 m/s² over the real distance)
     const dp = Math.abs(d) / PACE;
     let vt = clamp(player.v + Math.sign(d) * Math.min(Math.sqrt(2 * 6 * dp), dp * 1.2 + (dp > 30 ? 10 : 0)), 0, POLICE_VMAX);
-    if (front && d < 6 && d > -8) vt = Math.max(0, player.v - 3.5);
+    if (front && d < 6 && d > -8) vt = Math.max(0, player.v - (this.phase === 'hunt' ? 9 : 3.5));
+    if (isLead && (c.pull === 'lead' || c.pull === 'pull' || c.pull === 'stopped')) {   // lead the driver, slow down, pull over at the edge
+      c.leadV = Math.max(c.pull === 'lead' ? 60 / 3.6 : 0, (c.leadV ?? c.vs) - (c.pull === 'lead' ? 0.6 : 1.6) * dt);
+      if (c.pull === 'lead' && c.pullT > 8 && c.s - player.s < 70) { c.pull = 'pull'; c.pullT = 0; this._msg('ANHALTEN', 'Rechts ranfahren', ''); }
+      if (c.pull === 'pull' && c.leadV < 0.3 && c.vs < 0.5) c.pull = 'stopped';
+      vt = c.s - player.s > 70 ? c.leadV * 0.7 : c.leadV; }
     // corners: even the Polizei has to slow down (they are just braver)
     if (rd && rd.has(c.s + 40)) { const k = Math.abs(rd.curv(c.s + 40)); if (k > 2e-4) vt = Math.min(vt, Math.sqrt(7 / (k * PACE))); }
     // lane: right lane, or the left one while getting past the player
-    let off = rd && rd.kind === 'land' ? 1.75 : rd && rd.kind === 'kreis' ? 1.35 : 0;
+    let off = rd && rd.kind === 'land' ? 2.2 : rd && rd.kind === 'kreis' ? 1.75 : 0;
     if (front && c.s < player.s + 10 && c.s > player.s - 40) { off = -off || -1.6; vt = Math.max(vt, player.v + 8); }
+    if (isLead && (c.pull === 'pull' || c.pull === 'stopped') && rd) off = rd.hw - 0.9;   // to the right edge
     // do not drive into the back of anyone in the lane
     let gap = 1e9, lead = null;
     for (const o of traffic.cars) { if (o === c) continue; const g = o.s - o.L / 2 - (c.s + c.L / 2); if (g > -2 && g < gap && Math.abs(o.x - c.x) < (o.W + c.W) / 2 + 0.2) { gap = g; lead = o.crashed ? 0 : Math.max(0, o.vs); } }
@@ -136,7 +220,9 @@ export class Police {
     // the player left the Autobahn behind this car's position: this one has lost them
     if (this.off && c.s > player.s + 30 && !c.leaving && land.onAutobahn(c.x, c.s)) { c.leaving = true; c.slot = null; }
     let tx = LANES[c.lane], vt;
-    if (c.leaving) { vt = 30; tx = LANES[2]; }
+    const hunt = this.phase === 'hunt', isLead = this.phase === 'stop' && c.role === 'lead';
+    if (isLead) [tx, vt] = this._leadTarget(c, dt, player);
+    else if (c.leaving) { vt = 30; tx = LANES[2]; }
     else if (c.slot) {
       const sl = c.slot, ts = player.s + sl.ds, d = ts - c.s;
       tx = LANES[sl.lane];
@@ -145,7 +231,9 @@ export class Police {
       // close in no faster than they could still brake (~5 m/s²) to hold position
       else vt = clamp(player.v + Math.sign(d) * Math.min(Math.sqrt(2 * 2.5 * Math.abs(d) / PACE), Math.abs(d) / PACE, d > 0 ? 12 : 12), 0, POLICE_VMAX);
       // in front of the player: brake gently and slow them down
-      if (sl.name === 'front' && d < 6 && d > -10 && Math.abs(c.x - player.x) < 1.6) vt = Math.max(0, player.v - 3.5);
+      if (sl.name === 'front' && d < 6 && d > -10 && Math.abs(c.x - player.x) < 1.6) vt = Math.max(0, player.v - (hunt ? 9 : 3.5));   // Großfahndung: hard brake checks
+      if (hunt && (sl.name === 'left' || sl.name === 'right') && Math.abs(c.s - player.s) < 3.5) tx = player.x + Math.sign(c.x - player.x) * ((player.footW + c.W) / 2 - 0.25);   // and shoving
+      if (hunt && sl.name === 'back' && d > -6) vt = player.v + 1.5;   // nudging from behind
       if (d > -40) c.wait = false;
       // to get in front of the player, overtake in a free lane next to them, then cut in
       if (sl.name === 'front' && c.s < player.s + player.L / 2 + c.L / 2 + 3 && c.s > player.s - 120) {
@@ -164,7 +252,8 @@ export class Police {
     for (const o of traffic.cars) { if (o === c) continue; const g = o.s - o.L / 2 - (c.s + c.L / 2); if (g > -2 && g < gap && Math.abs(o.x - c.x) < (o.W + c.W) / 2 + 0.2) { gap = g; lead = o.crashed ? 0 : o.vs; } }
     let safe = 3 + c.vs * 0.25;
     const pg = player.s - player.L / 2 - (c.s + c.L / 2);
-    if (pg > -2 && pg < gap && Math.abs(player.x - c.x) < (player.footW + c.W) / 2 + 0.1) { gap = pg; lead = player.v; safe = 2.5 + c.vs * 0.14; }   // they sit right on your bumper
+    const rough = hunt && c.slot && (c.slot.name === 'back');
+    if (!rough && pg > -2 && pg < gap && Math.abs(player.x - c.x) < (player.footW + c.W) / 2 + 0.1) { gap = pg; lead = player.v; safe = 2.5 + c.vs * 0.14; }   // they sit right on your bumper
     gap /= PACE;   // in speedometer metres: the road goes by PACE times faster, so they need that much more room
     if (lead !== null && gap < safe * 2) vt = Math.min(vt, gap < safe ? lead * Math.max(0, gap / safe) : lead + 2);
     // closing too fast for the gap: brake now
@@ -176,7 +265,7 @@ export class Police {
     if (dir) {
       let clear = true; const nx = c.x + dir * 1.2;
       for (const o of traffic.cars) if (o !== c && Math.abs(o.s - c.s) < (o.L + c.L) / 2 + 1.5 && Math.abs(o.x - nx) < (o.W + c.W) / 2) { clear = false; break; }
-      if (Math.abs(player.s - c.s) < (player.L + c.L) / 2 + 0.8 && Math.abs(player.x - nx) < (player.footW + c.W) / 2) clear = false;
+      if (!(hunt && c.slot && c.slot.name !== 'back') && Math.abs(player.s - c.s) < (player.L + c.L) / 2 + 0.8 && Math.abs(player.x - nx) < (player.footW + c.W) / 2) clear = false;
       if (clear) c.x += clamp(tx - c.x, -4.2 * dt, 4.2 * dt);
     }
     c.lane = LANES.reduce((b, l, i) => (Math.abs(l - c.x) < Math.abs(LANES[b] - c.x) ? i : b), 0); c.toLane = c.lane;

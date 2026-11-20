@@ -190,7 +190,7 @@ export class Traffic {
     const c = this.add(kind, 0, s, vd * dir, { land: r, dir, vd, speed: vd, passed: dir > 0 ? false : false });
     c.x = r.xAt(s) + dir * this._laneOff(r);
   }
-  _laneOff(r) { return r.kind === 'land' ? 1.75 : r.kind === 'kreis' ? 1.35 : 0; }
+  _laneOff(r) { return r.kind === 'land' ? 2.2 : r.kind === 'kreis' ? 1.75 : 0; }
   // drive along a country road: keep right, slow for curves and for whoever is ahead in the lane
   _landDrive(c, dt, player, active) {
     let r = c.land;

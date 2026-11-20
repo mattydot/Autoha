@@ -71,15 +71,15 @@ export class Vehicle {
     // braking while steering for too long: weight comes off the rear and it starts to step out
     if (inp.brake > 0.3 && Math.abs(inp.steer) > 0.45 && au > 12) this.trail = Math.min(2, (this.trail || 0) + h);
     else this.trail = Math.max(0, (this.trail || 0) - h * 2.5);
-    const trail = clamp((this.trail - (rwd ? 0.25 : 0.45)) / 1.4, 0, 1);
+    const trail = clamp((this.trail - (rwd ? 0.6 : 0.8)) / 1.6, 0, 1);
     // rear-wheel drive: the tail is livelier: less margin at the rear, it steps out under power in a
     // corner and swings round more when trail-braking. All-wheel drive stays planted.
-    const power = rwd ? clamp(inp.throttle * Math.abs(inp.steer) * 1.4 - 0.3, 0, 1) * clamp((48 - au) / 20, 0, 1) : 0;
-    const wetLoss = clamp(1 - env.base, 0, 1), rearBias = (1.1 - wetLoss * 0.42 + (rwd ? -0.05 : 0.03)) * (1 - (rwd ? 0.32 : 0.14) * trail) * (1 - 0.1 * (spec.drift || 1) * power);
+    const power = rwd ? clamp(inp.throttle * Math.abs(inp.steer) * 1.4 - 0.5, 0, 1) * clamp((40 - au) / 20, 0, 1) : 0;
+    const wetLoss = clamp(1 - env.base, 0, 1), rearBias = (1.12 - wetLoss * 0.42 + (rwd ? 0.02 : 0.03)) * (1 - (rwd ? 0.04 : 0.02) * trail) * (1 - 0.035 * (spec.drift || 1) * power);
     // game feel: extra grip at low speed so the car is nimble in traffic, and in the 70-150 km/h band so
     // sweeping corners and quick direction changes there are easy, the way they are in a real sports car
     const low = clamp(1 - au / 36, 0, 1), mid = clamp((au - 12) / 10, 0, 1) * clamp((52 - au) / 14, 0, 1);
-    const agile = 1 + 0.35 * low + 0.24 * mid;
+    const land = !!env.land, agile = 1 + 0.35 * low + 0.24 * mid + (land ? 0.12 + 0.1 * low : 0);
     const muF = (muFL + muFR) / 2 * 1.05 * agile, muR = (muRL + muRR) / 2 * 1.05 * rearBias * agile;
     this.mu = (muF + muR) / 2; this.muBase = env.base;
     this.onSlick = Math.min(muFL, muFR, muRL, muRR) < env.base * 0.45;   // oil or milk, not a wheel on the grass
@@ -109,14 +109,16 @@ export class Vehicle {
     // plus a fixed margin (~1.4 deg at the road wheels) so high-speed steering has real authority, like a
     // driver turning the wheel 20 degrees; enough to break traction if overdone
     const hi = clamp((au - 55) / 25, 0, 1);   // above ~200 km/h: a touch calmer, as it was before the pace change
-    const dmax = clamp(((1.5 + 0.6 * low + 0.7 * mid) * G * wb / Math.max(au, 4) ** 2 + (env.steerAdd ?? 0.025 * Math.min(1, env.base * env.base)) * (1 + 0.6 * mid)) * (1 - 0.22 * hi), 0.006, 0.55);
+    let dmax = clamp(((1.5 + 0.6 * low + 0.7 * mid) * G * wb / Math.max(au, 4) ** 2 + (env.steerAdd ?? 0.025 * Math.min(1, env.base * env.base)) * (1 + 0.6 * mid)) * (1 - 0.22 * hi), 0.006, 0.55);
+    // country roads, ramps and off-road: a more direct rack with more lock, for hairpins and tight bends
+    if (land) { const lk = clamp((2.4 + 0.8 * low) * G * wb / Math.max(au, 4) ** 2 + 0.045, 0.01, 0.62), f = clamp((42 - au) / 17, 0, 1); dmax = Math.max(dmax, dmax + (lk - dmax) * f); }   // full extra lock below ~90 km/h, none from ~150
     const beta = Math.atan2(w, Math.max(au, 0.5));
     let target = inp.steer * dmax;
-    if (env.assist && Math.abs(inp.steer) < 0.05 && Math.abs(beta) < 0.3 && au > 3) {
+    if (env.assist && !land && Math.abs(inp.steer) < 0.05 && Math.abs(beta) < 0.3 && au > 3) {
       // hands-off: a driver keeping the car straight down the road
       const rd = clamp(-this.psi * 2.2, -0.35, 0.35);
       target = clamp((rd + (rd - this.r) * 0.6) * wb / au, -dmax * 0.8, dmax * 0.8);
-    } else if (env.assist && Math.abs(inp.steer) < 0.05 && Math.abs(beta) >= 0.3 && Math.abs(beta) < 0.75 && au > 5) {
+    } else if (env.assist && !land && Math.abs(inp.steer) < 0.05 && Math.abs(beta) >= 0.3 && Math.abs(beta) < 0.75 && au > 5) {
       // hands-off in a slide: catch it with opposite lock, like a driver would
       target = clamp(beta * 0.9 - this.r * 0.08, -0.3, 0.3);
     }
@@ -128,7 +130,10 @@ export class Vehicle {
     // rear-wheel steering at low speed: rear wheels turn against the fronts, so the car turns in faster
     const dR = -this.delta * 0.45 * low * low;
     const aF = Math.atan2(w + a * this.r, uu) - this.delta * sgn(u), aR = Math.atan2(w - b * this.r, uu) - dR * sgn(u);
-    let FyF = -muF * FzF * tyre(aF), FyR = -muR * FzR * tyre(aR) * 0.96;
+    // braking moves weight forward; road cars (and their stability control) keep the rear planted
+    // anyway, so the rear's cornering grip only drops a little under braking instead of letting go
+    const FzR0 = m * G * a / wb, FzRy = Math.max(FzR, FzR0 * 0.9);
+    let FyF = -muF * FzF * tyre(aF), FyR = -muR * FzRy * tyre(aR) * 0.96;
 
     // longitudinal: brakes with ABS, drive with a sporty traction control
     let FxF = 0, FxR = 0;
@@ -148,7 +153,7 @@ export class Vehicle {
 
     // friction circle per axle
     let k = Math.hypot(FxF, FyF), lim = muF * FzF; if (k > lim) { FxF *= lim / k; FyF *= lim / k; }
-    k = Math.hypot(FxR, FyR); lim = muR * FzR; if (k > lim) { FxR *= lim / k; FyR *= lim / k; }
+    k = Math.hypot(FxR, FyR); lim = muR * FzRy; if (k > lim) { FxR *= lim / k; FyR *= lim / k; }
 
     // sum in the car frame
     const cd = Math.cos(this.delta), sd = Math.sin(this.delta);
@@ -164,7 +169,7 @@ export class Vehicle {
     if (env.assist && au > 5 && Math.abs(beta) < 0.35) {
       const rRef = clamp(au * (this.delta - dR) / wb, -this.mu * G / au, this.mu * G / au);
       // limited authority (it can only brake single wheels), and it loses most of it on water
-      const auth = 0.1 * m * G * wb * clamp(1 - wetLoss * 1.6, 0.1, 1) * (env.esc ?? 1) * (1 - 0.55 * trail) * (rwd ? 0.55 : 1) * (1 - 0.6 * power);
+      const auth = 0.1 * m * G * wb * clamp(1 - wetLoss * 1.6, 0.1, 1) * (env.esc ?? 1) * (1 - 0.55 * trail) * (1 - 0.3 * power);
       Mz -= clamp((this.r - rRef) * this.I * 7 * this.mu, -auth, auth) * (1 - Math.abs(beta) / 0.35);
     }
 

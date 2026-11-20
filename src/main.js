@@ -212,6 +212,7 @@ const PAINT = () => carMesh.userData.paint.color.getHex();
 function physics(dt, driving) {
   const n = 4, h = dt / n, base = grip();
   env.base = base; env.mu = (x, s) => base * world.surface(x, s);
+  env.land = !world.land.onAutobahn(veh.x, veh.s);   // country-road steering, and no pull back to the Autobahn's heading
   const inp = driving && !veh.wrecked ? input : { throttle: 0, brake: veh.wrecked ? 0.6 : 0, steer: 0 };
   for (let k = 0; k < n; k++) {
     veh.step(h, inp, env);
@@ -264,14 +265,21 @@ function carHit(c, j, hit, pre) {
   shake = Math.max(shake, strength * 0.6); run.combo = 0;
   if (mode !== 'play' || veh.wrecked) return;
   // touching another car and driving on is a crime
-  if (c.police) { if (police.active) { police.trigger('WIDERSTAND', 40, 4); } }
+  // ramming a patrol car is resistance; being bumped by one is not your fault
+  const myFault = c.s > veh.s + 1 || (Math.abs(veh.vx) > 2 && Math.sign(c.x - veh.x) === Math.sign(veh.vx));
+  if (c.police) { if (police.active && myFault) police.trigger('WIDERSTAND', 40, 4); }
   else if (!c.touched) { c.touched = true; if (police.trigger('UNFALLFLUCHT', 45, 3)) { toast('UNFALLFLUCHT', 'Polizei alarmiert', 'bad'); haptic([40, 40, 40]); } }
   if (Math.abs(hit.n[0]) > 0.7 && veh.sideways > 0.55 && Math.abs(veh.w) > 12 && Math.random() < 0.12) veh.startRoll(Math.sign(-hit.n[0]) || 1, Math.abs(veh.w));
 }
+// the direction of the road under the car (0 on the Autobahn)
+function roadHeading() { const rd = world.land.onAutobahn(veh.x, veh.s) ? null : world.land.roadAt(veh.x, veh.s); return { rd, h: rd ? Math.atan(rd.slope(veh.s)) : 0 }; }
 function recover() {
-  if (veh.rolling || veh.wrecked || veh.speed > 6 || (Math.abs(veh.psi) < 0.5 && veh.speed > 1)) return;
-  const lane = LANES.reduce((b, l) => (Math.abs(l - veh.x) < Math.abs(b - veh.x) ? l : b), LANES[1]);
-  Object.assign(veh, { psi: 0, r: 0, vx: 0, vs: 4, x: lane }); run.recoverT = 0; run.score = Math.max(0, run.score - 500); toast('ZURÜCK AUF DER SPUR', '−500', '');
+  const { rd, h } = roadHeading();
+  if (veh.rolling || veh.wrecked || veh.speed > 6 || (Math.abs(veh.psi - h) < 0.5 && veh.speed > 1)) return;
+  let x;
+  if (rd) { const lo = rd.kind === 'land' ? 2.2 : rd.kind === 'kreis' ? 1.75 : 0, xc = rd.xAt(veh.s); x = rd.kind === 'area' ? clamp(veh.x, xc - rd.hwAt(veh.s) + 2, xc + rd.hwAt(veh.s) - 2) : xc + lo; }
+  else x = LANES.reduce((b, l) => (Math.abs(l - veh.x) < Math.abs(b - veh.x) ? l : b), LANES[1]);
+  Object.assign(veh, { psi: h, r: 0, vx: Math.sin(h) * 4, vs: Math.cos(h) * 4, x }); run.recoverT = 0; run.score = Math.max(0, run.score - 500); toast('ZURÜCK AUF DER SPUR', '−500', '');
 }
 
 /* ------------------------------ scoring & rules ------------------------------ */
@@ -289,6 +297,8 @@ function rules(dt) {
     else if (rd.kind === 'land' && was !== 'land') toast('LANDSTRASSE', 'Limit 100 · mind the curves and tractors', '');
     else if (rd.kind === 'kreis') toast('KREISSTRASSE', 'Narrow and quiet', '');
     else if (rd.kind === 'dirt') toast('FELDWEG', 'Gravel · Landwirtschaftlicher Verkehr frei', '');
+    else if (rd.kind === 'trail') toast('WALDWEG', 'Mud, ruts and puddles', '');
+    else if (rd.kind === 'area') toast('OFFROAD-GELÄNDE', 'Rocks, mud, water · go anywhere inside', 'good');
   } else if (run.time <= 0.5) { run.roadKey = rk; run.roadKind = rd ? rd.kind : 'A'; }
   const onA = !rd;
   if (limit !== run.limit) { if (limit) toast(`TEMPOLIMIT ${limit}`, onA ? 'Blitzer ahead? Maybe.' : '', ''); else if (onA) toast('FREIE FAHRT', 'End of all restrictions', 'good'); run.limit = limit; }
@@ -318,8 +328,10 @@ function rules(dt) {
   if (res === 'busted') { endRun('FESTGENOMMEN'); toast('FESTGENOMMEN', 'Aussteigen, Hände aufs Dach.', 'bad'); audio.busted(); haptic([80, 60, 80, 60, 200]); }
   else if (res === 'escaped') { run.score += 2500; toast('ENTKOMMEN!', 'Polizei abgehängt · +2500', 'good'); audio.bonus(); }
   else if (res === 'gaveup') { run.score += 1500; toast('POLIZEI GIBT AUF', '+1500', 'good'); audio.bonus(); }
+  else if (res === 'ticket') { const fine = { RASEREI: 900, UNFALLFLUCHT: 1200 }[police.reason] || 600; run.score = Math.max(0, run.score - fine); toast('VERKEHRSKONTROLLE', `Bußgeld −${fine} · Gute Fahrt!`, ''); }
+  for (const m of police.msgs.splice(0)) { toast(m.title, m.sub, m.kind); if (m.kind === 'bad') haptic([40, 40, 40]); }
   // stuck facing the wrong way: offer a recovery
-  if (!veh.wrecked && veh.speed < 3 && Math.abs(veh.psi) > 0.5) { run.recoverT += dt; if (run.recoverT > 1.2 && !run.hintShown) { run.hintShown = true; toast(touchMode ? 'TAP ↻' : 'DRÜCKE R', 'to get back on track', ''); } if (run.recoverT > 6) recover(); }
+  if (!veh.wrecked && veh.speed < 3 && Math.abs(veh.psi - roadHeading().h) > 0.5 && (run.roadKind !== 'area')) { run.recoverT += dt; if (run.recoverT > 1.2 && !run.hintShown) { run.hintShown = true; toast(touchMode ? 'TAP ↻' : 'DRÜCKE R', 'to get back on track', ''); } if (run.recoverT > 6) recover(); }
   else { run.recoverT = 0; if (veh.speed > 10) run.hintShown = false; }
   if (run.wreckT > 0) { run.wreckT += dt; if (run.wreckT > (veh.rolling ? 2 : 2.4) && (veh.settled || !veh.rolling) && veh.speed < 4 && mode === 'play') gameOver(); else if (run.wreckT > 9 && mode === 'play') gameOver(); }
 }
@@ -330,8 +342,12 @@ function updateCar(dt) {
   const u = carMesh.userData, H = veh.H;
   view.pitch += (clamp(veh.ax, -12, 8) * 0.0032 - view.pitch) * Math.min(1, dt * 6);
   view.lean += (clamp(-veh.ay, -12, 12) * 0.0045 - view.lean) * Math.min(1, dt * 5);
-  rig.position.set(veh.x, veh.rolling ? veh.yc : H / 2, -(veh.s - world.s));
-  rig.rotation.set(veh.rolling ? 0 : view.pitch, -veh.psi, -(veh.phi + (veh.rolling ? 0 : view.lean)));
+  // rough ground: the body bounces and rocks over ruts and stones (more with speed)
+  const rg = veh.x > 8 && !veh.rolling ? world.land.rough(veh.x, veh.s) : 0, sp = clamp(veh.speed / 10, 0, 1.6), ss = veh.s;
+  const bump = rg * sp * (Math.sin(ss * 1.9) * 0.6 + Math.sin(ss * 4.7 + veh.x * 0.8) * 0.4), rock = rg * sp * Math.sin(ss * 3.3 + veh.x) * 0.9;
+  rig.position.set(veh.x, (veh.rolling ? veh.yc : H / 2) + bump, -(veh.s - world.s));
+  rig.rotation.set((veh.rolling ? 0 : view.pitch) + bump * 0.5, -veh.psi, -(veh.phi + (veh.rolling ? 0 : view.lean)) + rock * 0.35);
+  if (rg && veh.speed > 3) shake = Math.max(shake, rg * sp * 0.8);
   rig.updateMatrixWorld(true);
   shadow.position.set(veh.x, 0.02, rig.position.z); shadow.rotation.set(-Math.PI / 2, 0, -veh.psi); shadow.material.opacity = 0.75 * clamp(1 - (veh.yc - H / 2) / 3, 0, 1);
   const spin = veh.u * dt * PACE / u.wheelR; for (const w of u.wheels) w.rotation.z -= spin;
@@ -358,7 +374,9 @@ function updateCar(dt) {
     carMesh.localToWorld(_v.set(side, veh.spec.body.c + 0.1, veh.L / 2 + 0.08)); fx.flame(_v.x, _v.y, -_v.z + world.s, veh.vx, veh.vs); audio.pop(snd.gain);
   }
   // gravel: a dust trail behind the car on a Feldweg
-  if (mode === 'play' && run.roadKind === 'dirt' && veh.speed > 7 && Math.random() < dt * Math.min(14, veh.speed * 0.5)) { carMesh.localToWorld(_v.set((Math.random() - 0.5) * veh.W, 0.3, veh.L / 2)); fx.puff(_v.x, 0.35, -_v.z + world.s, veh.vx * 0.3, veh.vs * 0.4, 1, false, 1.6 + veh.speed * 0.03); }
+  if (mode === 'play' && veh.x > 8 && veh.speed > 4) { const pt = world.land.patchAt(veh.x, veh.s);
+    if (pt && Math.random() < dt * Math.min(30, veh.speed * 1.2)) { carMesh.localToWorld(_v.set((Math.random() - 0.5) * veh.W * 1.2, 0.4, -veh.L * 0.2)); fx.puff(_v.x, 0.5, -_v.z + world.s, veh.vx * 0.5 + (Math.random() - 0.5) * 6, veh.vs * 0.5, 2, pt.kind === 'mud', pt.kind === 'water' ? 1.1 : 0.8); } }
+  if (mode === 'play' && (run.roadKind === 'dirt' || run.roadKind === 'area') && veh.speed > 7 && Math.random() < dt * Math.min(14, veh.speed * 0.5)) { carMesh.localToWorld(_v.set((Math.random() - 0.5) * veh.W, 0.3, veh.L / 2)); fx.puff(_v.x, 0.35, -_v.z + world.s, veh.vx * 0.3, veh.vs * 0.4, 1, false, 1.6 + veh.speed * 0.03); }
   if (veh.wrecked && Math.random() < dt * 6) { carMesh.localToWorld(_v.set(0, 0.9, -veh.L / 2 + 0.6)); fx.puff(_v.x, _v.y, -_v.z + world.s, 0, 0, 1, true, 1.6); }
 }
 
@@ -441,8 +459,9 @@ function updateHUD() {
   // police pill
   const pol = $('h-police'); pol.classList.toggle('hidden', !police.active);
   if (police.active) { const live = police.chasing, near = live.reduce((m, c) => Math.min(m, Math.abs(c.s - veh.s)), Infinity);
-    setText('h-police-t', `${live.length} · ${isFinite(near) ? Math.round(near) + ' m' : '—'} · ${Math.max(0, Math.ceil(police.heat))} s`);
-    $('h-police-bar').style.width = clamp(police.bustT / 2.4, 0, 1) * 100 + '%'; }
+    const stop = police.phase === 'stop';
+    setText('h-police-t', stop ? `BITTE FOLGEN · ${isFinite(near) ? Math.round(near) + ' m' : '—'}` : `${police.phase === 'hunt' ? 'FAHNDUNG · ' : ''}${live.length} · ${isFinite(near) ? Math.round(near) + ' m' : '—'} · ${Math.max(0, Math.ceil(police.heat))} s`);
+    $('h-police-bar').style.width = (stop ? clamp(police.stopT / 2.5, 0, 1) : clamp(police.bustT / 2.4, 0, 1)) * 100 + '%'; }
 }
 let popT = 0;
 function showRadioPop() { const info = audio.radio?.info; if (!info) return; setText('rp-station', info.station); setText('rp-track', info.title ? `${info.title} — ${info.artist}` : '');
@@ -543,10 +562,11 @@ function sirenState() {
   let best = null, bd = Infinity;
   for (const c of police.chasing) { const d = Math.hypot(c.x - veh.x, c.s - veh.s); if (d < bd) { bd = d; best = c; } }
   if (!best || bd > 600) { blueLight.intensity = 0; return null; }
+  const polite = police.phase === 'stop';   // pulling someone over: blue lights, no siren
   const k = ((performance.now() / 60) | 0) % 8;
   blueLight.position.set(best.x, 2.2, -(best.s - world.s)); blueLight.intensity = (k === 0 || k === 2 || k === 4 || k === 6 ? 30 : 0) * (0.3 + sky.night * 0.7 + sky.fogLevel * 0.5);
   const approach = (best.vs - veh.vs) * Math.sign(veh.s - best.s);
-  return { level: Math.pow(clamp(1 - bd / 550, 0, 1), 1.4), pan: clamp((best.x - veh.x) / 14, -1, 1), cents: 1200 * Math.log2(343 / (343 - clamp(approach, -60, 60))) };
+  return { level: polite ? 0 : Math.pow(clamp(1 - bd / 550, 0, 1), 1.4), pan: clamp((best.x - veh.x) / 14, -1, 1), cents: 1200 * Math.log2(343 / (343 - clamp(approach, -60, 60))) };
 }
 function simulate(dt) {
   if (mode === 'paused') { audio.update({ rpm: veh.spec.idle, throttle: 0, engineOn: false, bedsOn: false, speed: 0, wet: 0, rain: sky.cur.rain, scrape: 0 }); return; }
@@ -584,6 +604,7 @@ function render() {
 }
 
 setupQuality(); applyWorldSettings(); applyControls(); checkOrientation(); setCar(settings.car); updateMainUI(); updateMusicUI();
+{ const done = world.land.warmup(); try { renderer.compile(scene, camera); } catch {} done(); }   // compile the country-road shaders now, not mid-drive
 // offline play and installing as an app (needs http(s), not file://)
 const nativeApp = window.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.App : null;
 if (!nativeApp && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});

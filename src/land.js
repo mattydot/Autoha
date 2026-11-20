@@ -14,7 +14,7 @@ import * as THREE from 'three';
 
 const STEP = 2;                          // centre-line sample spacing (m)
 const AHEAD = 3300, BEHIND = 600;        // generate this far ahead, keep this much behind
-const CHUNK = 160;                       // road-surface mesh chunk length (m)
+const CHUNK = 300, SHOW = 1900;          // road-surface mesh chunk length (m), and how far ahead surfaces are built
 const WALL_R = 8.2 + 0.55;               // Autobahn right guardrail face (matches world.js)
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (a) => a[(Math.random() * a.length) | 0];
@@ -27,10 +27,12 @@ const PLACES = ['Haselbach', 'Oberried', 'Seewiesen', 'Hofstetten', 'Lindach', '
 
 // road kinds: half width (m), verge out to the fence, grip on the surface, y to avoid z-fighting
 const KIND = {
-  land:  { hw: 3.5, verge: 3.4, grip: 1.0, y: 0.014 },   // Landstraße: two lanes, centre line, edge lines
-  kreis: { hw: 2.8, verge: 3.0, grip: 0.95, y: 0.012 },  // Kreisstraße: narrower, no centre line
-  dirt:  { hw: 1.7, verge: 2.6, grip: 0.7, y: 0.010 },   // Feldweg: gravel, grass down the middle
-  ramp:  { hw: 2.1, verge: 3.0, grip: 1.0, y: 0.016 },   // Autobahn ramp: one lane, solid edges
+  land:  { hw: 4.4, verge: 7.5, grip: 1.0, y: 0.014 },   // Landstraße: two wide lanes, centre line, edge lines
+  kreis: { hw: 3.6, verge: 6.5, grip: 0.95, y: 0.012 },  // Kreisstraße: narrower, no centre line
+  dirt:  { hw: 2.6, verge: 5.5, grip: 0.72, y: 0.010 },  // Feldweg: gravel, grass down the middle
+  trail: { hw: 2.5, verge: 6.0, grip: 0.6, y: 0.009 },   // Waldweg / off-road track: mud, ruts, puddles, bumps
+  area:  { hw: 26, verge: 3.0, grip: 0.62, y: 0.008 },   // Offroad-Gelände: an open patch of rough ground
+  ramp:  { hw: 2.3, verge: 4.0, grip: 1.0, y: 0.016 },   // Autobahn ramp: one lane, solid edges
 };
 
 /* ------------------------------------------------------------------ */
@@ -63,6 +65,21 @@ function gravel() {
     g.fillStyle = '#5d7a3a'; for (let i = 0; i < 900; i++) { const x = w / 2 + (Math.random() - 0.5) * w * 0.16 * (0.6 + Math.random()); g.globalAlpha = 0.6; g.fillRect(x, Math.random() * h, 3, 5); }
     for (const e of [0, w]) for (let i = 0; i < 500; i++) { g.globalAlpha = 0.7; g.fillRect(e + (e ? -1 : 1) * Math.random() * w * 0.08, Math.random() * h, 3, 5); }
     g.globalAlpha = 1;
+  });
+}
+function mudTrack() {     // two dark muddy ruts with grass between and beside them
+  return tex(256, 512, (g, w, h) => {
+    g.fillStyle = '#6a5a40'; g.fillRect(0, 0, w, h); grain(g, w, h, 12000, ['#5a4a32', '#7a6a4c', '#4a3b28', '#837050'], 3);
+    for (const f of [0.3, 0.7]) { g.fillStyle = 'rgba(40,30,20,0.55)'; for (let y = 0; y < h; y += 4) g.fillRect(w * f - 18 + Math.sin(y * 0.05) * 4, y, 36, 4); }
+    g.fillStyle = '#5d7a3a'; g.globalAlpha = 0.7; for (let i = 0; i < 1400; i++) { const x = Math.random() < 0.5 ? w / 2 + (Math.random() - 0.5) * w * 0.18 : (Math.random() < 0.5 ? Math.random() * w * 0.12 : w - Math.random() * w * 0.12); g.fillRect(x, Math.random() * h, 3, 6); }
+    g.globalAlpha = 1;
+  });
+}
+function roughGround() {  // churned earth, gravel and patches of grass
+  return tex(512, 512, (g, w, h) => {
+    g.fillStyle = '#76664a'; g.fillRect(0, 0, w, h); grain(g, w, h, 30000, ['#5e4f36', '#8a7a5a', '#4f412c', '#9a8a68', '#6a5a3e'], 4);
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(${70 + Math.random() * 30},${100 + Math.random() * 30},50,0.5)`; g.beginPath(); g.ellipse(Math.random() * w, Math.random() * h, 10 + Math.random() * 40, 6 + Math.random() * 30, Math.random() * 3, 0, 7); g.fill(); }
+    for (let i = 0; i < 18; i++) { g.strokeStyle = 'rgba(40,30,20,0.45)'; g.lineWidth = 8 + Math.random() * 6; g.beginPath(); const x = Math.random() * w, y = Math.random() * h; g.moveTo(x, y); g.bezierCurveTo(x + rand(-120, 120), y + rand(-120, 120), x + rand(-120, 120), y + rand(-120, 120), x + rand(-160, 160), y + rand(-160, 160)); g.stroke(); }
   });
 }
 function wireTex() {
@@ -131,6 +148,9 @@ function signFace(kind, a = '', b = '') {
         g.save(); g.beginPath(); g.rect(6, 6, W - 12, H - 12); g.clip(); g.fillStyle = '#fff';
         const n = +a; for (let k = 0; k < n; k++) { const y = H / 2 + (k - (n - 1) / 2) * 92; g.beginPath(); g.moveTo(0, y + 16); g.lineTo(W, y - 40); g.lineTo(W, y - 12); g.lineTo(0, y + 44); g.fill(); }
         g.restore(); break; }
+      case 'board':                                         // wooden board at an off-road area
+        g.fillStyle = '#5a3f26'; g.fillRect(0, 40, 256, 176); g.strokeStyle = '#3a2814'; g.lineWidth = 3; for (let y = 70; y < 216; y += 30) { g.beginPath(); g.moveTo(0, y); g.lineTo(256, y); g.stroke(); }
+        g.fillStyle = '#f4ead8'; g.font = `bold 44px ${FONT}`; g.fillText(a, 128, 112, 236); g.font = `bold 22px ${FONT}`; g.fillText('Befahren auf eigene Gefahr', 128, 168, 236); break;
       case 'a330':                                          // Z 330.1: Autobahn
         rr(0, 0, W, H, 18, '#fff'); rr(6, 6, W - 12, H - 12, 14, '#0f4fa3'); g.fillStyle = '#fff';
         g.beginPath(); g.moveTo(30, 200); g.lineTo(100, 80); g.lineTo(118, 80); g.lineTo(70, 200); g.fill(); g.beginPath(); g.moveTo(226, 200); g.lineTo(156, 80); g.lineTo(138, 80); g.lineTo(186, 200); g.fill();
@@ -171,10 +191,15 @@ export class Land {
     this.world = world; this.frame = world.frame;
     const snow = (m, k) => world._snowy(m, k);
     this.mats = {
-      land: snow(new THREE.MeshStandardMaterial({ map: asphalt(7.0, { edge: 0.3, centre: true }), roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), 0.25),
-      kreis: snow(new THREE.MeshStandardMaterial({ map: asphalt(5.6, { edge: 0.25 }), roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), 0.3),
-      ramp: snow(new THREE.MeshStandardMaterial({ map: asphalt(4.2, { edge: 0.22 }), roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), 0.25),
+      land: snow(new THREE.MeshStandardMaterial({ map: asphalt(8.8, { edge: 0.35, centre: true }), roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), 0.25),
+      kreis: snow(new THREE.MeshStandardMaterial({ map: asphalt(7.2, { edge: 0.3 }), roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), 0.3),
+      ramp: snow(new THREE.MeshStandardMaterial({ map: asphalt(4.6, { edge: 0.22 }), roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), 0.25),
       dirt: snow(new THREE.MeshStandardMaterial({ map: gravel(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }), 0.6),
+      trail: snow(new THREE.MeshStandardMaterial({ map: mudTrack(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }), 0.7),
+      area: snow(new THREE.MeshStandardMaterial({ map: roughGround(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -0.8, polygonOffsetUnits: -1 }), 0.75),
+      water: new THREE.MeshStandardMaterial({ color: 0x3d4a52, roughness: 0.05, metalness: 0.6, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }),
+      mud: new THREE.MeshStandardMaterial({ color: 0x3b2c1e, roughness: 0.5, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }),
+      lake: new THREE.MeshStandardMaterial({ color: 0x2f4a5c, roughness: 0.08, metalness: 0.55, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
       wire: new THREE.MeshBasicMaterial({ map: wireTex(), transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, depthWrite: true }),
       wood: new THREE.MeshLambertMaterial({ color: 0x6d5236 }),
       dash: new THREE.MeshBasicMaterial({ map: tex(16, 64, (g, w, h) => { g.fillStyle = '#383a3e'; g.fillRect(0, 0, w, h); g.fillStyle = '#e9e9e4'; g.fillRect(0, 0, w, h / 2); }), polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }),
@@ -183,18 +208,31 @@ export class Land {
     this.reset();
   }
 
+  // put one small piece of every surface in view so its shader can be compiled up front (no hitch later)
+  warmup() {
+    const ms = Object.values(this.mats).map((m) => { const o = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), m); o.position.set(0, 0.5, -3); o.frustumCulled = false; this.frame.add(o); return o; });
+    return () => { for (const o of ms) { this.frame.remove(o); o.geometry.dispose(); } };
+  }
+
   /* ----------------------------- setup ----------------------------- */
   _scenery() {
     const inst = (geo, mat, n) => { const m = new THREE.InstancedMesh(geo, mat, n); m.frustumCulled = false; const Z = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < n; i++) m.setMatrixAt(i, Z); this.frame.add(m); m.userData.i = 0; return m; };
     // fence posts, roadside posts (Leitpfosten), trees, fields
-    this.posts = inst(new THREE.BoxGeometry(0.1, 1.6, 0.1).translate(0, 0.8, 0), this.mats.wood, 2600);
+    this.posts = inst(new THREE.BoxGeometry(0.1, 1.6, 0.1).translate(0, 0.8, 0), this.mats.wood, 9000);
     const W = this.world.m;
     this.leit = inst(new THREE.BoxGeometry(0.12, 1.0, 0.1).translate(0, 0.5, 0), W.white, 700);
     this.leitBand = inst(new THREE.BoxGeometry(0.125, 0.22, 0.105).translate(0, 0.78, 0), W.dark, 700);
     const trunk = new THREE.CylinderGeometry(0.16, 0.26, 1, 5).translate(0, 0.5, 0), cone = new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0), blob = new THREE.IcosahedronGeometry(1, 1);
     const leaf = this.world.leafMat;
-    this.tTrunk = inst(trunk, new THREE.MeshLambertMaterial({ color: 0x4a3a2a }), 1500); this.tCone = inst(cone, leaf, 1500); this.tBlob = inst(blob, leaf, 1500);
-    for (const m of [this.tCone, this.tBlob]) for (let i = 0; i < 1500; i++) m.setColorAt(i, new THREE.Color(0.2, 0.3, 0.15));
+    const NT = 5200;
+    this.tTrunk = inst(trunk, new THREE.MeshLambertMaterial({ color: 0x4a3a2a }), NT); this.tCone = inst(cone, leaf, NT); this.tBlob = inst(blob, leaf, NT);
+    for (const m of [this.tCone, this.tBlob]) for (let i = 0; i < NT; i++) m.setColorAt(i, new THREE.Color(0.2, 0.3, 0.15));
+    // off-road: rocks (solid), puddles and mud (low grip), plus round hay bales on the fields
+    this.rocks = inst(new THREE.DodecahedronGeometry(1, 0), this.world._snowy(new THREE.MeshStandardMaterial({ color: 0x8a8578, roughness: 0.95, flatShading: true }), 0.6), 240);
+    this.puddles = inst(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), this.mats.water, 200); this.puddles.position.y = 0.022;
+    this.muds = inst(new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2), this.mats.mud, 200); this.muds.position.y = 0.019;
+    this.bales = inst(new THREE.CylinderGeometry(0.75, 0.75, 1.2, 14).rotateZ(Math.PI / 2).translate(0, 0.75, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), 400);
+    for (let i = 0; i < 400; i++) this.bales.setColorAt(i, new THREE.Color(0.9, 0.9, 0.88));
     const fieldMat = this.world._snowy(new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -0.5, polygonOffsetUnits: -1 }), 0.9);
     this.fields = inst(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), fieldMat, 260);
     for (let i = 0; i < 260; i++) this.fields.setColorAt(i, new THREE.Color(0.4, 0.5, 0.3));
@@ -212,6 +250,16 @@ export class Land {
       const back = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0x8a8e94, roughness: 0.6 })); back.rotation.y = Math.PI;
       const plate = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ roughness: 0.55 }));
       g.add(face, back, plate); g.userData = { p1, p2, face, back, plate }; return g; });
+    // Hochsitze (hunters' raised hides) at forest edges, and quarry lakes
+    const wood2 = new THREE.MeshLambertMaterial({ color: 0x5a4330 });
+    this.stands = pool(14, () => { const g = new THREE.Group();
+      for (const [x, z] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) { const l = B(0.14, 4.4, 0.14, wood2, x * 1.1, 2.2, z * 1.1); l.rotation.z = -x * 0.06; l.rotation.x = z * 0.06; g.add(l); }
+      g.add(B(1.9, 1.5, 1.9, wood2, 0, 4.9, 0)); g.add(B(2.2, 0.12, 2.2, new THREE.MeshLambertMaterial({ color: 0x3a3030 }), 0, 5.75, 0)); g.add(B(1.2, 0.45, 0.06, W.dark, 0, 5.1, 0.96));
+      const lad = B(0.5, 4.6, 0.08, wood2, 0, 2.3, 1.6); lad.rotation.x = -0.3; g.add(lad); return g; });
+    this.lakes = pool(5, () => { const g = new THREE.Group(); const w = new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), this.mats.lake); w.position.y = 0.03; g.add(w);
+      const shore = new THREE.Mesh(new THREE.RingGeometry(1, 1.12, 40).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x7a6a50 })); shore.position.y = 0.025; g.add(shore);
+      for (let k = 0; k < 26; k++) { const a = k / 26 * 6.28 + Math.random() * 0.2, reed = B(0.05, 1, 0.05, new THREE.MeshLambertMaterial({ color: 0x6a7a3a })); reed.position.set(Math.cos(a) * 1.04, 0.5, Math.sin(a) * 1.04); g.add(reed); }
+      return g; });
     // farmhouses, barns, silos
     const roofMats = [0x8a3a26, 0x6a2a1c, 0x3a3c40, 0x9a4a2a].map((c) => this.world._snowy(new THREE.MeshLambertMaterial({ color: c }), 0.95));
     const wallMats = [0xf2ede2, 0xe8dcc4, 0xf4f1ea, 0xd9cfb8].map((c) => new THREE.MeshLambertMaterial({ color: c }));
@@ -236,13 +284,13 @@ export class Land {
 
   reset() {
     for (const r of this.roads || []) for (const c of r.chunks || []) this._dropChunk(c);
-    this.roads = []; this.junctions = []; this.signQueue = []; this.gaps = [];
-    for (const o of [...this.signs, ...this.houses]) { o.userData.s = -1e9; o.visible = false; }
-    for (const m of [this.posts, this.leit, this.leitBand, this.tTrunk, this.tCone, this.tBlob, this.fields]) { const Z = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < m.count; i++) m.setMatrixAt(i, Z); m.instanceMatrix.needsUpdate = true; m.userData.i = 0; }
+    this.roads = []; this.junctions = []; this.signQueue = []; this.gaps = []; this.patches = []; this.rockList = [];
+    for (const o of [...this.signs, ...this.houses, ...this.stands, ...this.lakes]) { o.userData.s = -1e9; o.visible = false; }
+    for (const m of [this.posts, this.leit, this.leitBand, this.tTrunk, this.tCone, this.tBlob, this.fields, this.rocks, this.puddles, this.muds, this.bales]) { const Z = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < m.count; i++) m.setMatrixAt(i, Z); m.instanceMatrix.needsUpdate = true; m.userData.i = 0; }
     this.exitNo = 60 + ((Math.random() * 6) | 0);
     // the Landstraße: starts well to the right of the Autobahn
     this.L = new Road('land', -BEHIND - 200, 'L'); this.roads.push(this.L);
-    this.gen = { x: 240, th: 0, k: 0, left: 0, nextJ: 2600 + rand(0, 900), nextB: 1500 + rand(0, 800), branch: null, farm: 300, field: -600, tree: -600, leitS: -600 };
+    this.gen = { x: 260, th: 0, k: 0, left: 0, nextJ: 2600 + rand(0, 900), nextBR: 400 + rand(0, 400), nextBL: 900 + rand(0, 600), plans: [], farm: 300, field: -600, tree: -600, leitS: -600, stand: 0, lake: 500 };
     this.L.xs.push(this.gen.x);
     this.built = -BEHIND - 200; this.s = 0;
     this._extend(AHEAD);
@@ -261,24 +309,33 @@ export class Land {
         G.k = clamp((thD - G.th) / 70, -kmax, kmax);
       } else {
         if (G.left <= 0) {   // a new piece: straight or a curve, steered back towards the middle of the band
-          G.left = rand(140, 460); const want = G.x < 150 ? 1 : G.x > 430 ? -1 : 0;
+          G.left = rand(140, 460); const want = G.x < 190 ? 1 : G.x > 520 ? -1 : 0;
           if (Math.random() < 0.38 && !want) G.k = 0;
           else { const R = rand(220, 720) * (Math.random() < 0.18 ? 0.7 : 1), sg = want || (Math.random() < 0.5 ? -1 : 1); G.k = sg / R;
             if (R < 330) this._curveSigns(s, G.left, sg, R); }
         }
         G.left -= STEP;
         if (Math.abs(G.th) > 0.42 && Math.sign(G.k) === Math.sign(G.th)) G.k = 0;
-        if ((G.x < 100 && G.th < 0) || (G.x > 470 && G.th > 0)) G.k = -Math.sign(G.th) / 300;
+        if ((G.x < 130 && G.th < 0) || (G.x > 560 && G.th > 0)) G.k = -Math.sign(G.th) / 300;
       }
       G.th = clamp(G.th + G.k * STEP, -0.45, 0.45); G.x += Math.tan(G.th) * STEP; L.xs.push(G.x);
       const sn = L.s1;
       if (sn >= G.nextJ + 420 && !G.jDone) { G.jDone = true; this._junction(G.nextJ); }
       if (G.jDone && sn > G.nextJ + 1800) { G.lastJ = G.nextJ; G.nextJ = sn + rand(4200, 7000); G.jDone = false; }
-      if (G.branch && sn >= G.branch.end) { this._branch(G.branch); G.nextB = G.branch.end + rand(500, 1400); G.branch = null; }
-      // side roads fit in between junctions (after the last one's on-ramp, ending well before the next exit)
-      const room = G.nextJ - 1900 - sn;
-      if (!G.branch && sn >= G.nextB && sn > (G.lastJ ?? -1e9) + 1100 && room > 1000) {
-        const len = Math.min(rand(1200, 2600), room), kind = Math.random() < 0.55 ? 'kreis' : 'dirt'; G.branch = { s0: sn, end: sn + len, kind };
+      // build planned side roads once the Landstraße exists all along them
+      for (const B of G.plans) if (!B.done && sn >= B.end) { B.done = true; this._branch(B); }
+      G.plans = G.plans.filter((B) => !B.done);
+      // right side: a side road every few hundred metres (Kreisstraße, Feldweg or Waldweg)
+      // up to two at once: one close to the Landstraße and one further out
+      const right = G.plans.filter((B) => B.side > 0);
+      if (sn >= G.nextBR && right.length < 2) {
+        const outer = right.length === 1 && !right[0].outer, len = rand(900, 2600), k = Math.random();
+        G.plans.push({ s0: sn, end: sn + len, side: 1, outer, kind: k < 0.38 ? 'kreis' : k < 0.66 ? 'dirt' : 'trail' }); G.nextBR = sn + rand(250, 700);
+      }
+      // left side (between the Landstraße and the Autobahn), clear of the junctions
+      const room = G.nextJ - 2100 - sn;
+      if (sn >= G.nextBL && !G.plans.some((B) => B.side < 0) && sn > (G.lastJ ?? -1e9) + 1000 && room > 700) {
+        const len = Math.min(rand(800, 1800), room), k = Math.random(); G.plans.push({ s0: sn, end: sn + len, side: -1, kind: k < 0.3 ? 'kreis' : k < 0.6 ? 'dirt' : 'trail' }); G.nextBL = sn + len + rand(100, 500);
       }
     }
   }
@@ -296,7 +353,7 @@ export class Land {
     const L = this.L, no = String(this.exitNo++), name = EXITS[(+no) % EXITS.length];
     // exit: 260 m deceleration lane beside lane 3, then curving off to meet the Landstraße
     const se = sj - 660, ex = new Road('ramp', se, 'exit ' + no); ex.taper = [se, se + 80, 1e9, 1e9 + 1];
-    const xL = L.xAt(sj) + 1.75, mL = L.slope(sj), d0 = se + 260, D = sj - d0;   // ends in the Landstraße's right lane
+    const xL = L.xAt(sj) + 2.2, mL = L.slope(sj), d0 = se + 260, D = sj - d0;   // ends in the Landstraße's right lane
     for (let s = se; s <= sj; s += STEP) {
       if (s < d0) { ex.xs.push(7.4); continue; }
       const t = (s - d0) / D, h00 = 2 * t ** 3 - 3 * t * t + 1, h10 = t ** 3 - 2 * t * t + t, h01 = -2 * t ** 3 + 3 * t * t, h11 = t ** 3 - t * t;
@@ -331,18 +388,52 @@ export class Land {
   // guardrail gap wherever a ramp runs close to the Autobahn (until the ramp's own fence line is clear of the guardrail)
   _gap(r) { let a = null; for (let s = r.s0; s <= r.s1; s += STEP) { const near = r.xAt(s) - r.hwAt(s) - r.verge < WALL_R + 1.5; if (near && a === null) a = s; if (!near && a !== null) { this.gaps.push([a, s]); a = null; } } if (a !== null) this.gaps.push([a, r.s1]); }
 
-  // a Kreisstraße or Feldweg that leaves the Landstraße to the right and rejoins it later
+  // a side road that leaves `parent` on one side and rejoins it later
+  _sideRoad(parent, s0, s1, kind, side, A) {
+    const len = s1 - s0, r = new Road(kind, s0, kind), ph = rand(0, 6), wig = kind === 'trail' ? 0.28 : kind === 'dirt' ? 0.16 : 0.12, fq = kind === 'trail' ? 16 : 9;
+    for (let s = s0; s <= s1; s += STEP) { const t = (s - s0) / len, env = smooth(t / 0.24) * smooth((1 - t) / 0.24);
+      r.xs.push(parent.xAt(s) + side * env * (A + Math.sin(t * fq + ph) * A * wig)); }
+    r.joins = parent; r.side = side; this.roads.push(r);
+    const sd = side > 0 ? 1 : -1;
+    if (kind === 'kreis') this.signQueue.push({ s: s0 - 90, road: parent, side: 1, kind: 'ww', a: pick(PLACES) + '|' + ((3 + Math.random() * 8) | 0), b: sd > 0 ? 'R' : 'L', ww: true });
+    else this.signQueue.push({ s: s0 + 60, road: r, side: 1, kind: 'z250', plate: kind === 'trail' ? ['Forstwirtschaftlicher', 'Verkehr frei'] : ['Landwirtschaftlicher', 'Verkehr frei'] });
+    this.signQueue.push({ s: s1 - 60, road: r, side: 1, kind: 'yield' });
+    // puddles and mud on the unsurfaced ones
+    if (kind === 'trail' || kind === 'dirt') for (let k = 0, n = kind === 'trail' ? (len / 90) | 0 : (len / 260) | 0; k < n; k++) {
+      const ss = s0 + rand(0.12, 0.88) * len; this._patch(r.xAt(ss) + rand(-1, 1) * r.hw * 0.5, ss, rand(1.6, kind === 'trail' ? 3.6 : 2.4), Math.random() < 0.55 ? 'water' : 'mud'); }
+    return r;
+  }
   _branch(B) {
-    const L = this.L, len = B.end - B.s0, r = new Road(B.kind, B.s0, B.kind), A = B.kind === 'kreis' ? rand(140, 300) : rand(60, 150), ph = rand(0, 6);
-    for (let s = B.s0; s <= B.end; s += STEP) { const t = (s - B.s0) / len, env = smooth(t / 0.28) * smooth((1 - t) / 0.28);
-      r.xs.push(L.xAt(s) + env * (A + Math.sin(t * 9 + ph) * A * 0.12)); }
-    r.joins = L; this.roads.push(r);
-    const name = pick(PLACES);
-    if (B.kind === 'kreis') { this.signQueue.push({ s: B.s0 - 90, road: L, side: 1, kind: 'ww', a: name + '|' + ((3 + Math.random() * 8) | 0), b: 'R', ww: true }); }
-    else { this.signQueue.push({ s: B.s0 + 50, road: r, side: 1, kind: 'z250', plate: ['Landwirtschaftlicher', 'Verkehr frei'] }); }
-    this.signQueue.push({ s: B.end - 60, road: r, side: 1, kind: 'yield' });
-    // a farm out along the branch
-    const fs = B.s0 + len * rand(0.35, 0.65); this._farm(r, fs, 1);
+    const L = this.L, len = B.end - B.s0;
+    let A = B.outer ? rand(320, 520) : B.kind === 'kreis' ? rand(140, 260) : B.kind === 'dirt' ? rand(60, 150) : rand(80, 200);
+    if (B.side < 0) { let xmin = Infinity; for (let s = B.s0; s < B.end; s += 20) xmin = Math.min(xmin, L.xAt(s)); A = Math.min(A, xmin - 60); if (A < 35) return; }
+    const r = this._sideRoad(L, B.s0, B.end, B.kind, B.side, A);
+    // more to find: a Feldweg or Waldweg off a Kreisstraße, an off-road area off a Waldweg
+    if ((r.kind === 'kreis' || r.kind === 'dirt') && len > 1000) { const a = B.s0 + len * rand(0.2, 0.35), b = Math.min(B.end - len * 0.15, a + rand(500, 1100));
+      this._sideRoad(r, a, b, Math.random() < 0.5 ? 'trail' : 'dirt', B.side, rand(60, 140)); }
+    const host = r.kind === 'trail' ? r : r.kind === 'kreis' && Math.random() < 0.5 ? r : null;
+    if (host && len > 700 && Math.random() < 0.8) this._area(host, B.s0 + len * rand(0.3, 0.5), rand(280, 520), B.side);
+    this._farm(r, B.s0 + len * rand(0.35, 0.65), B.side);
+  }
+  // Offroad-Gelände: a wide patch of rough ground with rocks, mud and water, entered from a track
+  _area(parent, s0, len, side) {
+    const s1 = s0 + len; if (!parent.has(s0) || !parent.has(s1)) return;
+    const a = new Road('area', s0, 'Gelände'), A = rand(40, 70);
+    for (let s = s0; s <= s1; s += STEP) { const t = (s - s0) / len, env = smooth(t / 0.2) * smooth((1 - t) / 0.2); a.xs.push(parent.xAt(s) + side * env * A); }
+    a.taper = [s0, s0 + 70, s1 - 70, s1]; a.joins = parent; this.roads.push(a);
+    for (let k = 0; k < 14; k++) { const ss = s0 + rand(0.2, 0.8) * len, x = a.xAt(ss) + rand(-0.8, 0.8) * a.hwAt(ss); this._rock(x, ss, rand(0.6, 1.5)); }
+    for (let k = 0; k < 10; k++) { const ss = s0 + rand(0.15, 0.85) * len; this._patch(a.xAt(ss) + rand(-0.8, 0.8) * a.hwAt(ss), ss, rand(2.5, 6), Math.random() < 0.45 ? 'water' : 'mud'); }
+    this.signQueue.push({ s: s0 - 30, road: parent, side: side, kind: 'board', a: pick(['OFFROAD', 'KIESGRUBE', 'GELÄNDE']), b: '' });
+  }
+  _rock(x, s, sz) {
+    const i = this.rocks.userData.i; this.rocks.userData.i = (i + 1) % this.rocks.count;
+    this.rocks.setMatrixAt(i, _M.compose(_v.set(x, sz * 0.35, -s), _q.setFromEuler(_e.set(rand(0, 3), rand(0, 3), 0)), _sc.set(sz, sz * 0.7, sz * 1.1))); this.rocks.instanceMatrix.needsUpdate = true;
+    this.world.obstacles.push({ x, s, psi: 0, L: sz * 1.6, W: sz * 1.4, vx: 0, vs: 0, r: 0, m: Infinity, I: Infinity, rock: true });
+  }
+  _patch(x, s, rad, kind) {
+    const m = kind === 'water' ? this.puddles : this.muds, i = m.userData.i; m.userData.i = (i + 1) % m.count;
+    m.setMatrixAt(i, _M.compose(_v.set(x, 0, -s), _q.setFromEuler(_e.set(0, rand(0, 3), 0)), _sc.set(rad, 1, rad * rand(0.6, 1)))); m.instanceMatrix.needsUpdate = true;
+    this.patches.push({ x, s, r: rad, kind });
   }
 
   _farm(road, s, side) {
@@ -392,7 +483,17 @@ export class Land {
   surface(x, s) {
     let g = 0.58;   // wet grass
     for (const r of this.roads) { if (s < r.s0 || s > r.s1) continue; if (Math.abs(x - r.xAt(s)) <= r.hwAt(s) + 0.15) g = Math.max(g, r.grip); }
+    const p = this.patchAt(x, s); if (p) g = Math.min(g, p.kind === 'water' ? 0.5 : 0.42);
     return g;
+  }
+  patchAt(x, s) { for (const p of this.patches) { const dx = x - p.x, ds = s - p.s; if (dx * dx + ds * ds < p.r * p.r) return p; } return null; }
+  // how bumpy the ground is (0 smooth asphalt .. ~0.08 churned off-road ground)
+  rough(x, s) {
+    let best = null, bd = Infinity;
+    for (const r of this.roads) { if (s < r.s0 || s > r.s1) continue; const d = Math.abs(x - r.xAt(s)); if (d < r.hwAt(s) + r.verge && d < bd) { bd = d; best = r; } }
+    if (!best) return 0;
+    const onIt = bd <= best.hwAt(s);
+    return best.kind === 'area' ? 0.075 : best.kind === 'trail' ? (onIt ? 0.055 : 0.07) : best.kind === 'dirt' ? (onIt ? 0.028 : 0.05) : onIt ? 0 : 0.035;
   }
   limitAt(x, s) { const r = this.roadAt(x, s); return r ? r.limitAt(s) : 0; }
 
@@ -408,10 +509,10 @@ export class Land {
     g.setIndex(idx); g.computeVertexNormals(); for (let i = 1; i < g.attributes.normal.count * 3; i += 3) g.attributes.normal.array[i] = 1;
     const m = new THREE.Mesh(g, this.mats[r.kind]); m.renderOrder = 1; return m;
   }
-  _fence(r, a, b, side, chunk) {
-    // posts every 4 m along the corridor edge, skipped where another road's corridor (or the Autobahn) is
+  _fence(r, a, b, side, w) {
+    // posts every 6 m along the corridor edge, skipped where another road's corridor (or the Autobahn) is
     const pts = [];
-    for (let s = a; s < b; s += 4) {
+    for (let s = a; s < b; s += 6) {
       const th = Math.atan(r.slope(s)), x = r.xAt(s) + side * (r.hw + r.verge) / Math.cos(th);
       const other = this.roads.some((o) => o !== r && o.has(s) && Math.abs(x - o.xAt(s)) < o.hwAt(s) + o.verge + 0.5) || x < WALL_R + 2;
       if (other) { pts.push(null); continue; }
@@ -419,12 +520,19 @@ export class Land {
       this.posts.setMatrixAt(i, _M.makeTranslation(x, 0, -s)); pts.push([x, -s]);
     }
     this.posts.instanceMatrix.needsUpdate = true;
-    // wire mesh between consecutive posts
-    const pos = [], uv = [], idx = []; let n = 0;
-    for (let i = 1; i < pts.length; i++) { const p = pts[i - 1], q = pts[i]; if (!p || !q) continue;
-      pos.push(p[0], 0.1, p[1], q[0], 0.1, q[1], p[0], 1.45, p[1], q[0], 1.45, q[1]); uv.push(0, 0, 0.5, 0, 0, 1, 0.5, 1); idx.push(n, n + 1, n + 2, n + 1, n + 3, n + 2); n += 4; }
-    if (n) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
-      const m = new THREE.Mesh(g, this.mats.wire); this.frame.add(m); chunk.meshes.push(m); }
+    // wire mesh between consecutive posts (collected for the whole chunk, one mesh)
+    for (let i = 1; i < pts.length; i++) { const p = pts[i - 1], q = pts[i]; if (!p || !q) continue; const n = w.n;
+      w.pos.push(p[0], 0.1, p[1], q[0], 0.1, q[1], p[0], 1.45, p[1], q[0], 1.45, q[1]); w.uv.push(0, 0, 0.75, 0, 0, 1, 0.75, 1); w.idx.push(n, n + 1, n + 2, n + 1, n + 3, n + 2); w.n += 4; }
+  }
+  _wire(w, chunk) {
+    if (!w.n) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(w.pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(w.uv, 2)); g.setIndex(w.idx);
+    const m = new THREE.Mesh(g, this.mats.wire); this.frame.add(m); chunk.meshes.push(m);
+  }
+  // Waldweg: dense trees just beyond the fence on both sides
+  _forest(r, a, b) {
+    for (let s = a; s < b; s += r.kind === 'area' ? 9 : 4) for (const sd of [-1, 1]) for (let k = 0; k < 2; k++) {
+      if (Math.random() < 0.2) continue; const th = Math.atan(r.slope(s + k * 2)), x = r.xAt(s + k * 2) + sd * (r.hwAt(s) + r.verge + rand(1.2, k ? 40 : 12)) / Math.cos(th);
+      if (this._treeOk(x, s + k * 2, 0.5)) this._tree(x, s + k * 2, Math.random() < 0.72, 1 + Math.random() * 0.6); }
   }
   _buildChunks(upTo) {
     for (const r of this.roads) {
@@ -432,9 +540,10 @@ export class Land {
       while (r.builtTo < Math.min(upTo, r.s1 - 0.01)) {
         const a = r.builtTo, b = Math.min(r.s1, a + CHUNK), c = { a, b, meshes: [] };
         const rib = this._ribbon(r, a, b); this.frame.add(rib); c.meshes.push(rib);
-        if (r.kind !== 'ramp' || r.xAt(a) > WALL_R + 6) { this._fence(r, a, b, 1, c); this._fence(r, a, b, -1, c); }
+        if (r.kind !== 'ramp' || r.xAt(a) > WALL_R + 6) { const w = { pos: [], uv: [], idx: [], n: 0 }; this._fence(r, a, b, 1, w); this._fence(r, a, b, -1, w); this._wire(w, c); }
         if (r.kind === 'ramp' && r.xAt(a) < 9) this._dashes(r, a, b, c);
         if (r.kind === 'land' || r.kind === 'kreis' || r.kind === 'ramp') this._leitposts(r, a, b);
+        if (r.kind === 'trail' || r.kind === 'area') this._forest(r, a, b);
         r.chunks.push(c); r.builtTo = b;
       }
     }
@@ -475,7 +584,15 @@ export class Land {
       this.fields.setMatrixAt(i, _M.compose(_v.set(x, 0, -s), _q.identity(), _sc.set(w, 1, d)));
       const c = pick(['#d8c22a', '#c9b46a', '#5d7f34', '#6b5236', '#7a9a3e', '#a08a52', '#4f6e2c']); this.fields.setColorAt(i, _c.set(c));   // rapeseed, wheat, young crops, ploughed, meadow, stubble
       this.fields.instanceMatrix.needsUpdate = true; this.fields.instanceColor.needsUpdate = true;
+      if ((c === '#c9b46a' || c === '#a08a52') && Math.random() < 0.7) for (let k = 0, n = 3 + ((Math.random() * 6) | 0); k < n; k++) {   // round bales on harvested fields
+        const j = this.bales.userData.i; this.bales.userData.i = (j + 1) % this.bales.count;
+        this.bales.setMatrixAt(j, _M.compose(_v.set(x + rand(-0.4, 0.4) * w, 0, -(s + rand(-0.4, 0.4) * d)), _q.setFromEuler(_e.set(0, rand(0, 3), 0)), _sc.set(1, 1, 1)));
+        this.bales.setColorAt(j, _c.set(Math.random() < 0.6 ? '#eeeeea' : '#c8b070')); this.bales.instanceMatrix.needsUpdate = true; this.bales.instanceColor.needsUpdate = true; }
     }
+    while (G.stand < upTo) { const s = G.stand; G.stand += rand(500, 1100); const xL = L.has(s) ? L.xAt(s) : 260, x = xL + rand(-1, 1) * rand(40, 300);
+      if (this.clear(x, s, 4)) { let o = this.stands[0]; for (const q of this.stands) if (q.userData.s < o.userData.s) o = q; o.userData.s = s; o.position.set(x, 0, -s); o.rotation.y = rand(0, 6); o.visible = true; } }
+    while (G.lake < upTo) { const s = G.lake; G.lake += rand(1600, 3200); const rad = rand(35, 80), xL = L.has(s) ? L.xAt(s) : 260, x = xL + (Math.random() < 0.6 ? 1 : -1) * rand(rad + 40, rad + 260);
+      if (x > WALL_R + rad + 40 && this.clear(x, s, rad + 8)) { let o = this.lakes[0]; for (const q of this.lakes) if (q.userData.s < o.userData.s) o = q; o.userData.s = s; o.position.set(x, 0, -s); o.scale.set(rad, 1, rad * rand(0.55, 0.9)); o.rotation.y = rand(0, 3); o.visible = true; } }
     while (G.farm < upTo) { const s = G.farm; G.farm += rand(500, 1200); if (L.has(s) && !this.nearJunction(s, 200)) this._farm(L, s, Math.random() < 0.7 ? 1 : -1); }
   }
   _treeOk(x, s, r) { return this.clear(x, s, r) && x > WALL_R + 10; }
@@ -503,6 +620,7 @@ export class Land {
       else if (q.ww) { w = q.kind === 'wwA' ? 2.6 : 2.2; h = q.kind === 'wwA' ? 0.95 : 0.55; y = 2.2; two = true; }
       else if (q.chev) { w = 0.9; h = 0.9; y = 1.2; }
       else if (q.kind === 'a330') { w = 1.0; h = 1.0; y = 2.2; }
+      else if (q.kind === 'board') { w = 2.2; h = 2.2; y = 1.5; two = true; }
       else if (q.kind === 'yield' || q.kind.startsWith('curve') || q.kind === 'deer') { w = 0.9; h = 0.9; }
       if (q.plate) plate = signFace('plate', q.plate[0], q.plate[1]);
       u.face.material.map = signFace(q.kind, q.a, q.b); u.face.material.needsUpdate = true;
@@ -520,7 +638,7 @@ export class Land {
   update(dt, s, sky) {
     this.s = s;
     this._extend(s + AHEAD);
-    this._buildChunks(s + AHEAD - 200);
+    this._buildChunks(s + SHOW);
     this._decorate(s + AHEAD - 300);
     this._placeSigns(s + AHEAD - 300);
     // forget what is well behind
@@ -528,6 +646,7 @@ export class Land {
       const lim = s - BEHIND;
       this.roads = this.roads.filter((r) => { if (r !== this.L && r.s1 < lim) { for (const c of r.chunks || []) this._dropChunk(c); return false; }
         if (r.chunks) r.chunks = r.chunks.filter((c) => { if (c.b < lim) { this._dropChunk(c); return false; } return true; }); return true; });
+      this.patches = this.patches.filter((p) => p.s > lim - 50);
       this.L.trim(lim - 200); this.junctions = this.junctions.filter((j) => j.s1 > lim - 2000); this.gaps = this.gaps.filter((g) => g[1] > lim - 200);
     }
     // weather on the surfaces
@@ -537,4 +656,4 @@ export class Land {
     this.winMat.emissive.setRGB(sky.night * 0.55, sky.night * 0.42, sky.night * 0.2);
   }
 }
-const _M = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _sc = new THREE.Vector3(), _c = new THREE.Color(), _Z = new THREE.Matrix4().makeScale(0, 0, 0);
+const _e = new THREE.Euler(), _M = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _sc = new THREE.Vector3(), _c = new THREE.Color(), _Z = new THREE.Matrix4().makeScale(0, 0, 0);
