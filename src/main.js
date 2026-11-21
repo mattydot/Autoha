@@ -258,7 +258,10 @@ function hurt(dv, what, cap = 100) {
 function carHit(c, j, hit, pre) {
   const dv = j / veh.m, dvc = j / c.m;
   // below 150 km/h, or when both cars were going about the same speed, a car-to-car hit dents and smokes but never writes the car off
-  hurt(dv, 'car', pre.v * KMH < 150 || pre.closing * KMH < 40 ? 88 : 100); traffic.knock(c, dvc);
+  const hostile = c.police && (police.phase === 'chase' || police.phase === 'hunt');
+  if (hostile) hurt(dv * (c.kind === 'swat' ? 1.5 : 1.2), 'car', 100);
+  else hurt(dv, 'car', pre.v * KMH < 150 || pre.closing * KMH < 40 ? 88 : 100);
+  traffic.knock(c, dvc);
   const strength = clamp(Math.max(dv, dvc) / 12, 0.15, 1);
   if (performance.now() - run.lastHit > 180) { audio.crash(strength); if (strength > 0.4) audio.glass(); run.lastHit = performance.now(); haptic(Math.round(25 + strength * 90)); }
   fx.debris(hit.p[0], 0.55, hit.p[1], (veh.vx + c.vx) / 2, (veh.vs + c.vs) / 2, 2 + (strength * 10 | 0), c.mesh.userData.paint ? c.mesh.userData.paint.color.getHex() : PAINT());
@@ -324,7 +327,8 @@ function rules(dt) {
     } else if (c.passed && c.s - c.L / 2 > veh.s + veh.L / 2 + 4) c.passed = false;
   }
   // police
-  const res = police.update(dt, veh, traffic); world.policeActive = police.active;
+  const res = police.update(dt, veh, traffic, sky.night); world.policeActive = police.active;
+  if (police.events.includes('spikes')) { audio.crash(0.5); audio.glass(); shake = Math.max(shake, 0.45); haptic([60, 30, 60, 30, 120]); }
   if (res === 'busted') { endRun('FESTGENOMMEN'); toast('FESTGENOMMEN', 'Aussteigen, Hände aufs Dach.', 'bad'); audio.busted(); haptic([80, 60, 80, 60, 200]); }
   else if (res === 'escaped') { run.score += 2500; toast('ENTKOMMEN!', 'Polizei abgehängt · +2500', 'good'); audio.bonus(); }
   else if (res === 'gaveup') { run.score += 1500; toast('POLIZEI GIBT AUF', '+1500', 'good'); audio.bonus(); }
@@ -372,6 +376,10 @@ function updateCar(dt) {
   if (mode === 'play' && !veh.wrecked && snd.pops >= 0.9 && input.throttle < 0.05 && veh.rpm > veh.spec.redline * 0.5 && Math.random() < dt * 9 * snd.pops) {
     const n = veh.spec.body.exhaust === 'quad' ? [-0.55, 0.55] : [-0.12, 0.12], side = n[(Math.random() * n.length) | 0];
     carMesh.localToWorld(_v.set(side, veh.spec.body.c + 0.1, veh.L / 2 + 0.08)); fx.flame(_v.x, _v.y, -_v.z + world.s, veh.vx, veh.vs); audio.pop(snd.gain);
+  }
+  if (mode === 'play' && veh.flats && veh.speed > 4) {
+    veh.scrape = Math.max(veh.scrape || 0, Math.min(0.7, veh.flats * 0.06 * veh.speed / 10));
+    if (Math.random() < dt * veh.flats * Math.min(10, veh.speed * 0.4)) { carMesh.localToWorld(_v.set((Math.random() < 0.5 ? -1 : 1) * veh.W * 0.42, 0.1, (Math.random() < 0.5 ? -1 : 1) * veh.wb * 0.5)); fx.spark(_v.x, 0.08, -_v.z + world.s, veh.vx, veh.vs, 2); }
   }
   // gravel: a dust trail behind the car on a Feldweg
   if (mode === 'play' && veh.x > 8 && veh.speed > 4) { const pt = world.land.patchAt(veh.x, veh.s);
@@ -460,7 +468,7 @@ function updateHUD() {
   const pol = $('h-police'); pol.classList.toggle('hidden', !police.active);
   if (police.active) { const live = police.chasing, near = live.reduce((m, c) => Math.min(m, Math.abs(c.s - veh.s)), Infinity);
     const stop = police.phase === 'stop';
-    setText('h-police-t', stop ? `BITTE FOLGEN · ${isFinite(near) ? Math.round(near) + ' m' : '—'}` : `${police.phase === 'hunt' ? 'FAHNDUNG · ' : ''}${live.length} · ${isFinite(near) ? Math.round(near) + ' m' : '—'} · ${Math.max(0, Math.ceil(police.heat))} s`);
+    setText('h-police-t', stop ? `BITTE FOLGEN · ${isFinite(near) ? Math.round(near) + ' m' : '—'}` : `${police.phase === 'hunt' ? 'FAHNDUNG · ' : ''}${police.heliOn ? 'HELI · ' : ''}${veh.flats ? 'REIFEN PLATT · ' : ''}${live.length} · ${isFinite(near) ? Math.round(near) + ' m' : '—'} · ${Math.max(0, Math.ceil(police.heat))} s`);
     $('h-police-bar').style.width = (stop ? clamp(police.stopT / 2.5, 0, 1) : clamp(police.bustT / 2.4, 0, 1)) * 100 + '%'; }
 }
 let popT = 0;
@@ -594,7 +602,7 @@ function simulate(dt) {
     police: police.active, slide: veh.sliding, onSlick: veh.onSlick, flash: flashT > 0, fog: sky.fogLevel > 0.3, damage: veh.damage, trip: (veh.s / 1000).toFixed(1), wrecked: veh.wrecked });
   if (mode === 'play') updateHUD();
   audio.update({ rpm: veh.rpm, throttle: thr, engineOn, bedsOn: mode === 'play', interior: camMode === 2, speed: veh.speed, wet: sky.wet, rain: sky.cur.rain, scrape: veh.scrape,
-    skid: mode === 'play' && !veh.rolling ? veh.skid : 0, siren: mode === 'play' || mode === 'over' ? sirenState() : null });
+    skid: mode === 'play' && !veh.rolling ? veh.skid : 0, siren: mode === 'play' || mode === 'over' ? sirenState() : null, heli: mode === 'play' ? police.heliLevel || 0 : 0 });
   if (bloom) bloom.strength = 0.35 + sky.night * 0.45 + sky.cur.fog * 20;
   renderer.toneMappingExposure = 1.0 - sky.night * 0.1;
 }

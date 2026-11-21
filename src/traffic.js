@@ -14,14 +14,14 @@ import { sat, resolve } from './physics.js';
 const KMH = 1 / 3.6;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = THREE.MathUtils.clamp;
-const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, r6: 1520, m5b: 1940, police: 2075, tractor: 4200, city: 1050, hatch: 1350, mpv: 1700, crossover: 1550, bus: 2300, coupe: 1600, g4: 3020, kay: 2220, xm: 2710, gtb: 1520 };
+const MASS = { compact: 1250, sedan: 1500, wagon: 1650, suv: 2150, van: 2600, truck: 16000, m3: 1730, rs6: 2075, maybach: 2350, v10: 1490, r6: 1520, m5b: 1940, police: 2075, swat: 3800, tractor: 4200, city: 1050, hatch: 1350, mpv: 1700, crossover: 1550, bus: 2300, coupe: 1600, g4: 3020, kay: 2220, xm: 2710, gtb: 1520 };
 
 export class Traffic {
   constructor(world) {
     this.world = world; this.factory = new TrafficFactory(); world.factory = this.factory;
     this.cars = []; this.oncoming = []; this.pool = {}; this.density = 1; this.police = null;
     this.spawnT = 0;
-    for (const k of [...TRAFFIC_KINDS, 'truck', 'tractor', ...new Set(FAST), 'police']) this.factory._template(k);
+    for (const k of [...TRAFFIC_KINDS, 'truck', 'tractor', ...new Set(FAST), 'police', 'swat']) this.factory._template(k);
   }
   _get(kind) {
     const p = this.pool[kind] || (this.pool[kind] = []);

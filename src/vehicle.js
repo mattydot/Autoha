@@ -40,7 +40,7 @@ export class Vehicle {
     Object.assign(this, {
       x, s, vx: 0, vs: v, psi: 0, r: 0, delta: 0, ax: 0, ay: 0, rpm: this.spec.idle, gear: 1, shiftT: 0,
       rolling: false, phi: 0, omega: 0, yc: this.H / 2, vy: 0, rolls: 0, settled: false,
-      damage: 0, wrecked: false, skid: 0, wheelspin: 0, mu: 1, muBase: 1, thrAudio: 0, onSlick: false, sliding: false,
+      damage: 0, wrecked: false, flats: 0, skid: 0, wheelspin: 0, mu: 1, muBase: 1, thrAudio: 0, onSlick: false, sliding: false,
     });
     this.events.length = 0;
     while (this.gear < this.gearV.length && v > this.gearV[this.gear - 1] * 0.8) this.gear++;
@@ -80,7 +80,9 @@ export class Vehicle {
     // sweeping corners and quick direction changes there are easy, the way they are in a real sports car
     const low = clamp(1 - au / 36, 0, 1), mid = clamp((au - 12) / 10, 0, 1) * clamp((52 - au) / 14, 0, 1);
     const land = !!env.land, agile = 1 + 0.35 * low + 0.24 * mid + (land ? 0.12 + 0.1 * low : 0);
-    const muF = (muFL + muFR) / 2 * 1.05 * agile, muR = (muRL + muRR) / 2 * 1.05 * rearBias * agile;
+    // shredded tyres (spike strip): far less grip, and the rims drag
+    const flat = 1 - 0.14 * (this.flats || 0);
+    const muF = (muFL + muFR) / 2 * 1.05 * agile * flat, muR = (muRL + muRR) / 2 * 1.05 * rearBias * agile * flat;
     this.mu = (muF + muR) / 2; this.muBase = env.base;
     this.onSlick = Math.min(muFL, muFR, muRL, muRR) < env.base * 0.45;   // oil or milk, not a wheel on the grass
 
@@ -113,7 +115,7 @@ export class Vehicle {
     // country roads, ramps and off-road: a more direct rack with more lock, for hairpins and tight bends
     if (land) { const lk = clamp((2.4 + 0.8 * low) * G * wb / Math.max(au, 4) ** 2 + 0.045, 0.01, 0.62), f = clamp((42 - au) / 17, 0, 1); dmax = Math.max(dmax, dmax + (lk - dmax) * f); }   // full extra lock below ~90 km/h, none from ~150
     const beta = Math.atan2(w, Math.max(au, 0.5));
-    let target = inp.steer * dmax;
+    let target = inp.steer * dmax + (this.flats ? Math.sin(this.s * 0.9) * 0.012 * this.flats * Math.min(1, au / 20) : 0);   // flat tyres tug the wheel
     if (env.assist && !land && Math.abs(inp.steer) < 0.05 && Math.abs(beta) < 0.3 && au > 3) {
       // hands-off: a driver keeping the car straight down the road
       const rd = clamp(-this.psi * 2.2, -0.35, 0.35);
@@ -158,7 +160,7 @@ export class Vehicle {
     // sum in the car frame
     const cd = Math.cos(this.delta), sd = Math.sin(this.delta);
     const cr = Math.cos(dR), sr = Math.sin(dR);
-    const FX = FxF * cd - FyF * sd + FxR * cr - FyR * sr - this.kd * u * Math.abs(u) - (au > 0.3 ? sgn(u) * 0.012 * m * G : 0);
+    const FX = FxF * cd - FyF * sd + FxR * cr - FyR * sr - this.kd * u * Math.abs(u) - (au > 0.3 ? sgn(u) * (0.012 + 0.055 * (this.flats || 0)) * m * G : 0);
     const FY = FxF * sd + FyF * cd + FxR * sr + FyR * cr;
     let Mz = a * (FxF * sd + FyF * cd) - b * (FxR * sr + FyR * cr);
     // uneven grip left/right: the side that grips more pulls harder

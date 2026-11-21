@@ -558,6 +558,23 @@ function buildTruck() {
   return g;
 }
 
+// SEK van (police special forces): dark, heavy, blue lights in the grille and on the roof
+function buildSwat() {
+  const paint = new THREE.MeshStandardMaterial({ color: 0x1b2230, roughness: 0.55, metalness: 0.3 }), tail = tailProto.clone();
+  const b = { ...TRAFFIC_BODIES.van, grille: 'plain', head: 'slim' };
+  const car = assemble(b, { paint, roof: paint, tail, plate: plateMat('NRW 1-110') }, false, false);
+  const blueA = new THREE.MeshStandardMaterial({ color: 0x1030ff, emissive: 0x2050ff, emissiveIntensity: 0.2 }), blueB = blueA.clone();
+  const hl = b.L / 2, W = b.W;
+  car.add(box(0.5, 0.1, 0.25, blueA, -0.4, b.H + 0.05, -hl + 1.4), box(0.5, 0.1, 0.25, blueB, 0.4, b.H + 0.05, -hl + 1.4));
+  car.add(box(0.12, 0.05, 0.03, blueA, -0.35, b.noseH - 0.05, -hl - 0.01), box(0.12, 0.05, 0.03, blueB, 0.35, b.noseH - 0.05, -hl - 0.01));
+  car.add(box(W * 0.96, 0.18, 0.2, MATS.black, 0, b.c + 0.2, -hl - 0.05));                 // push bar
+  const txt = new THREE.MeshBasicMaterial({ map: textTex('POLIZEI', '#e8ecf2'), transparent: true });
+  for (const sd of [-1, 1]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.36), txt); m.rotation.y = sd * Math.PI / 2; m.position.set(sd * (W / 2 + 0.005), 1.35, 0.2); car.add(m); }
+  car.add(shadowMesh(b.L, b.W));
+  Object.assign(car.userData, { paint, tail, blue: [blueA, blueB], isPolice: true });
+  return car;
+}
+
 // farm tractor (green, big rear wheels, glass cab, orange beacon), for the country roads
 function buildTractor() {
   const g = new THREE.Group(), h = new THREE.Group();
@@ -689,6 +706,7 @@ export class TrafficFactory {
     if (kind === 'truck') t = buildTruck();
     else if (kind === 'police') t = buildPolice();
     else if (kind === 'tractor') t = buildTractor();
+    else if (kind === 'swat') t = buildSwat();
     else {
       const sport = CARS.find((c) => c.id === kind);
       const b = sport ? sport.body : TRAFFIC_BODIES[kind];

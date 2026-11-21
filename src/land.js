@@ -13,7 +13,9 @@
 import * as THREE from 'three';
 
 const STEP = 2;                          // centre-line sample spacing (m)
-const AHEAD = 3300, BEHIND = 600;        // generate this far ahead, keep this much behind
+// The road network is planned much further ahead than scenery is placed, so every side road, ramp and
+// off-road area exists before fields, farms, lakes and trees go down (nothing ends up on a road).
+const AHEAD = 5800, DECO = 2800, BEHIND = 600;
 const CHUNK = 300, SHOW = 1900;          // road-surface mesh chunk length (m), and how far ahead surfaces are built
 const WALL_R = 8.2 + 0.55;               // Autobahn right guardrail face (matches world.js)
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -27,12 +29,12 @@ const PLACES = ['Haselbach', 'Oberried', 'Seewiesen', 'Hofstetten', 'Lindach', '
 
 // road kinds: half width (m), verge out to the fence, grip on the surface, y to avoid z-fighting
 const KIND = {
-  land:  { hw: 4.4, verge: 7.5, grip: 1.0, y: 0.014 },   // Landstraße: two wide lanes, centre line, edge lines
-  kreis: { hw: 3.6, verge: 6.5, grip: 0.95, y: 0.012 },  // Kreisstraße: narrower, no centre line
-  dirt:  { hw: 2.6, verge: 5.5, grip: 0.72, y: 0.010 },  // Feldweg: gravel, grass down the middle
-  trail: { hw: 2.5, verge: 6.0, grip: 0.6, y: 0.009 },   // Waldweg / off-road track: mud, ruts, puddles, bumps
-  area:  { hw: 26, verge: 3.0, grip: 0.62, y: 0.008 },   // Offroad-Gelände: an open patch of rough ground
-  ramp:  { hw: 2.3, verge: 4.0, grip: 1.0, y: 0.016 },   // Autobahn ramp: one lane, solid edges
+  land:  { hw: 4.4, verge: 7.5, grip: 1.0, y: 0.034 },   // Landstraße: two wide lanes, centre line, edge lines
+  kreis: { hw: 3.6, verge: 6.5, grip: 0.95, y: 0.028 },  // Kreisstraße: narrower, no centre line
+  dirt:  { hw: 2.6, verge: 5.5, grip: 0.72, y: 0.022 },  // Feldweg: gravel, grass down the middle
+  trail: { hw: 2.5, verge: 6.0, grip: 0.6, y: 0.018 },   // Waldweg / off-road track: mud, ruts, puddles, bumps
+  area:  { hw: 26, verge: 3.0, grip: 0.62, y: 0.012 },   // Offroad-Gelände: an open patch of rough ground
+  ramp:  { hw: 2.3, verge: 4.0, grip: 1.0, y: 0.04 },   // Autobahn ramp: one lane, solid edges
 };
 
 /* ------------------------------------------------------------------ */
@@ -229,8 +231,8 @@ export class Land {
     for (const m of [this.tCone, this.tBlob]) for (let i = 0; i < NT; i++) m.setColorAt(i, new THREE.Color(0.2, 0.3, 0.15));
     // off-road: rocks (solid), puddles and mud (low grip), plus round hay bales on the fields
     this.rocks = inst(new THREE.DodecahedronGeometry(1, 0), this.world._snowy(new THREE.MeshStandardMaterial({ color: 0x8a8578, roughness: 0.95, flatShading: true }), 0.6), 240);
-    this.puddles = inst(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), this.mats.water, 200); this.puddles.position.y = 0.022;
-    this.muds = inst(new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2), this.mats.mud, 200); this.muds.position.y = 0.019;
+    this.puddles = inst(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), this.mats.water, 200); this.puddles.position.y = 0.048;
+    this.muds = inst(new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2), this.mats.mud, 200); this.muds.position.y = 0.045;
     this.bales = inst(new THREE.CylinderGeometry(0.75, 0.75, 1.2, 14).rotateZ(Math.PI / 2).translate(0, 0.75, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), 400);
     for (let i = 0; i < 400; i++) this.bales.setColorAt(i, new THREE.Color(0.9, 0.9, 0.88));
     const fieldMat = this.world._snowy(new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -0.5, polygonOffsetUnits: -1 }), 0.9);
@@ -552,7 +554,7 @@ export class Land {
   _dashes(r, a, b, c) {
     const pos = [], uv = [], idx = []; let n = 0;
     for (let s = a; s < b; s += 4) { if (r.xAt(s) > 9 || r.hwAt(s) < 1) continue;
-      pos.push(5.47, 0.02, -s, 5.78, 0.02, -s, 5.47, 0.02, -(s + 4), 5.78, 0.02, -(s + 4)); const v = s / 12; uv.push(0, v, 1, v, 0, v + 1 / 3, 1, v + 1 / 3); idx.push(n, n + 1, n + 2, n + 1, n + 3, n + 2); n += 4; }
+      pos.push(5.47, 0.05, -s, 5.78, 0.05, -s, 5.47, 0.05, -(s + 4), 5.78, 0.05, -(s + 4)); const v = s / 12; uv.push(0, v, 1, v, 0, v + 1 / 3, 1, v + 1 / 3); idx.push(n, n + 1, n + 2, n + 1, n + 3, n + 2); n += 4; }
     if (!n) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
     const mt = this.mats.dash; mt.map.wrapT = THREE.RepeatWrapping; const m = new THREE.Mesh(g, mt); m.renderOrder = 2; this.frame.add(m); c.meshes.push(m);
   }
@@ -578,7 +580,7 @@ export class Land {
     while (G.field < upTo) {
       const s = G.field; G.field += rand(90, 170);
       const xL = L.has(s) ? L.xAt(s) : 240, w = rand(70, 200), d = rand(70, 220), x = Math.random() < 0.65 ? xL + rand(20, 360) + w / 2 : rand(40, Math.max(60, xL - 20 - w / 2));
-      let ok = true; for (const [fx, fs] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5], [0, 0], [0, -0.5], [0, 0.5], [-0.5, 0], [0.5, 0]]) if (!this.clear(x + fx * w, s + fs * d, 2)) { ok = false; break; }
+      let ok = true; for (let a = -0.5; a <= 0.5 && ok; a += 0.25) for (let b = -0.5; b <= 0.5; b += 0.25) if (!this.clear(x + a * w, s + b * d, 6)) { ok = false; break; }
       if (!ok) continue;
       const i = this.fields.userData.i; this.fields.userData.i = (i + 1) % this.fields.count;
       this.fields.setMatrixAt(i, _M.compose(_v.set(x, 0, -s), _q.identity(), _sc.set(w, 1, d)));
@@ -639,8 +641,8 @@ export class Land {
     this.s = s;
     this._extend(s + AHEAD);
     this._buildChunks(s + SHOW);
-    this._decorate(s + AHEAD - 300);
-    this._placeSigns(s + AHEAD - 300);
+    this._decorate(s + DECO);
+    this._placeSigns(s + DECO);
     // forget what is well behind
     if (((this._gc = (this._gc || 0) + dt) > 2)) { this._gc = 0;
       const lim = s - BEHIND;

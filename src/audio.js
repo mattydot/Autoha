@@ -35,6 +35,9 @@ export class GameAudio {
     // tyre screech: narrow band noise, wobbling in pitch
     this.screech = bed('bandpass', 1500, 9); const wob = ctx.createOscillator(), wg = ctx.createGain(); wob.frequency.value = 7; wg.gain.value = 140; wob.connect(wg).connect(this.screech.f.frequency); wob.start();
     const sq = ctx.createBiquadFilter(); sq.type = 'peaking'; sq.frequency.value = 2900; sq.Q.value = 6; sq.gain.value = 9; this.screech.g.disconnect(); this.screech.g.connect(sq).connect(this.sfxGain);
+    // police helicopter: low rotor noise chopped by a ~13 Hz blade rhythm
+    this.heli = bed('lowpass', 260, 0.9); { const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 13; lg.gain.value = 0.5; const am = ctx.createGain(); am.gain.value = 0.5;
+      this.heli.g.disconnect(); this.heli.g.connect(am).connect(this.sfxGain); lfo.connect(lg).connect(am.gain); lfo.start(); }
     // Martinshorn: two horns alternating between 440 and 585 Hz
     this.sirenOut = ctx.createGain(); this.sirenOut.gain.value = 0; this.sirenPan = ctx.createStereoPanner();
     const sirenLp = ctx.createBiquadFilter(); sirenLp.type = 'lowpass'; sirenLp.frequency.value = 2600;
@@ -76,6 +79,7 @@ export class GameAudio {
     this.rain.g.gain.setTargetAtTime(st.rain * 0.3 * (st.bedsOn ? 1 : 0.5), t, 0.3);
     this.scrape.g.gain.setTargetAtTime(k * st.scrape * 0.55, t, 0.03);
     this.screech.g.gain.setTargetAtTime(k * (st.skid || 0) * 0.32, t, 0.04); this.screech.f.frequency.setTargetAtTime(1200 + v * 9, t, 0.1);
+    this.heli.g.gain.setTargetAtTime((st.heli || 0) * 0.9, t, 0.3);
     const sr = st.siren || { level: 0, pan: 0, cents: 0 };
     this.sirenOut.gain.setTargetAtTime(sr.level * 0.22, t, 0.15); this.sirenPan.pan.setTargetAtTime(sr.pan, t, 0.1);
     for (const o of this.sirenOsc) o.detune.setTargetAtTime(sr.cents, t, 0.2);
