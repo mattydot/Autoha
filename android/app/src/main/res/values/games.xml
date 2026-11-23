@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Play Games services project id (Play Console > Play Games services > Configuration).
+         Leave as 0 until you have one: Play Games then stays switched off in the app. -->
+    <string name="game_services_project_id" translatable="false">0</string>
+</resources>

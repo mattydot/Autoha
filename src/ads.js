@@ -9,6 +9,8 @@
 // IDs: these are Google's public TEST ids. Before release, replace them with
 // your own ad unit ids from the AdMob console (and the app id in
 // android/app/src/main/AndroidManifest.xml), and set testing to false.
+import { t } from './i18n.js';
+
 export const ADS = {
   interstitial: 'ca-app-pub-3940256099942544/1033173712',   // Google test interstitial
   rewarded: 'ca-app-pub-3940256099942544/5224354917',       // Google test rewarded
@@ -85,10 +87,10 @@ function placeholder(kind) {
   return new Promise((res) => {
     const el = document.createElement('div'); el.className = 'adph';
     const secs = kind === 'rewarded' ? 5 : 3;
-    el.innerHTML = `<div class="adph-box"><div class="tiny">${kind === 'rewarded' ? 'REWARDED AD' : 'AD'} · PLACEHOLDER</div><h2>Werbung</h2><p class="muted">In the Android app a Google AdMob ${kind === 'rewarded' ? 'rewarded video' : 'interstitial'} plays here.</p><button class="primary" disabled>${secs}</button>${kind === 'rewarded' ? '<button class="skip">Skip (no reward)</button>' : ''}</div>`;
+    el.innerHTML = `<div class="adph-box"><div class="tiny">${kind === 'rewarded' ? 'REWARDED AD' : 'AD'} · PLACEHOLDER</div><h2>${t('Werbung')}</h2><p class="muted">In the Android app a Google AdMob ${kind === 'rewarded' ? 'rewarded video' : 'interstitial'} plays here.</p><button class="primary" disabled>${secs}</button>${kind === 'rewarded' ? `<button class="skip">${t('Skip (no reward)')}</button>` : ''}</div>`;
     document.body.appendChild(el);
-    const btn = el.querySelector('button.primary'); let t = secs;
-    const iv = setInterval(() => { t--; if (t > 0) btn.textContent = t; else { clearInterval(iv); btn.disabled = false; btn.textContent = kind === 'rewarded' ? 'CLAIM REWARD' : 'CLOSE'; } }, 1000);
+    const btn = el.querySelector('button.primary'); let left = secs;
+    const iv = setInterval(() => { left--; if (left > 0) btn.textContent = left; else { clearInterval(iv); btn.disabled = false; btn.textContent = t(kind === 'rewarded' ? 'CLAIM REWARD' : 'CLOSE'); } }, 1000);
     btn.addEventListener('click', () => { el.remove(); res(true); });
     el.querySelector('.skip')?.addEventListener('click', () => { clearInterval(iv); el.remove(); res(false); });
   });

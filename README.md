@@ -60,7 +60,10 @@ Play in landscape or upright; the camera and the menus adapt to how you hold the
 - **LED gantries** over the road warn about what is ahead (roadworks, accidents, oil, fog, storm, snow, police) and set variable speed limits.
 - **Weather and time**: day/night cycle with sunrise and sunset, clear, cloudy, overcast, rain, thunderstorm, fog (with fog banks you drive in and out of) and snow, changing while you drive or fixed in Settings.
 - **Radio** with seven stations of instrumental music composed live in code: classical (piano and strings), techno, rock (guitars, no singer), summer pop, synth-pop, electro-pop and phonk beats. In the MUSIC menu you can remove tracks from a station (and put them back) and add or delete your own files. While driving, the station shows as a small pop-up at the top of the screen. All sound stops when you switch to another tab or app and carries on when you come back.
-- **Ads (Android app)**: an interstitial after every 3rd run and an optional rewarded ad to keep going after a crash or arrest (Google AdMob, with the consent form where required). See [docs/ANDROID.md](docs/ANDROID.md#ads-google-admob).
+- **Career**: every run pays euros (about one per 8 points); the first two cars are free, the rest (and extra paints) are bought in the garage. Three **daily missions** (near misses, distance, country roads, off-road, villages, escapes, a polite traffic stop, exits, a clean run) pay bonuses.
+- **Languages**: English, Deutsch, Français, Español, Italiano, Polski, Türkçe, Nederlands, Português; picked from the phone's language, changeable in Settings.
+- **Settings**: Battery saver graphics (about 30 fps, lower resolution), tutorial, privacy policy, error report.
+- **Ads (Android app)**: an interstitial after every 3rd run; optional rewarded ads to keep going after a crash or arrest, double a run's money, or waive a speed-camera fine; a "remove ads" purchase; Google Play Games leaderboards and achievements (Google AdMob, with the consent form where required). See [docs/ANDROID.md](docs/ANDROID.md#ads-google-admob).
 - **Scoring**: distance at speed, near misses with a combo multiplier, speed clubs at 300/350/400 km/h, escaping the police.
 
 ## Your own music

@@ -27,6 +27,9 @@
 
         </activity>
 
+        <!-- Play Games services project id (from res/values/games.xml) -->
+        <meta-data android:name="com.google.android.gms.games.APP_ID" android:value="@string/game_services_project_id" />
+
         <!-- AdMob app id: this is Google's TEST app id. Replace it with your own from the AdMob console before release. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"

@@ -40,7 +40,16 @@
   <div id="h-police" class="police hidden"><i class="lights"></i><b>POLIZEI</b><span id="h-police-t"></span><u><i id="h-police-bar"></i></u></div>
   <div id="h-slip" class="slip hidden">SLIDE</div>
   <div id="toasts"></div>
+  <button id="h-waive" class="waive hidden"><span class="play">▶</span> Waive the fine</button>
 </div>
+
+<!-- ============ TUTORIAL ============ -->
+<div id="tutorial" class="tut hidden"><div class="tut-box">
+  <div class="tut-step" data-step="0"><div class="tiny">1 / 3</div><h2>HOW TO DRIVE</h2><p>Steer with the ◀ ▶ buttons (or tilt the phone, see Settings). Gas is automatic; hold BRAKE to slow down. On a keyboard: W A S D.</p></div>
+  <div class="tut-step hidden" data-step="1"><div class="tiny">2 / 3</div><h2>TRAFFIC &amp; POINTS</h2><p>Speed and close passes score points. Flash your lights (✦ or F) and slow cars move over. Take an Ausfahrt to explore country roads, villages and off-road tracks. Money from each run unlocks new cars.</p></div>
+  <div class="tut-step hidden" data-step="2"><div class="tiny">3 / 3</div><h2>THE POLIZEI</h2><p>Hit a car and drive on, or race past a speed camera, and a patrol car comes. Follow it when it shows BITTE FOLGEN and stop behind it: just a fine. Run, and it becomes a chase with a helicopter, SEK vans and spike strips.</p></div>
+  <div class="row"><button id="tut-skip" class="grow">SKIP</button><button id="tut-next" class="grow primary">NEXT</button></div>
+</div></div>
 
 <!-- ============ MAIN MENU ============ -->
 <section id="s-main" class="screen">
@@ -50,14 +59,18 @@
     <button data-go="garage">GARAGE<small id="m-car">—</small></button>
     <button data-go="music">MUSIC<small id="m-radio">Radio</small></button>
     <button data-go="settings">SETTINGS<small>Audio · graphics · world</small></button>
+    <div class="row native-only hidden" id="m-games"><button id="m-lb" class="grow">LEADERBOARDS</button><button id="m-ach" class="grow">ACHIEVEMENTS</button></div>
+    <button id="m-noads" class="native-only hidden">REMOVE ADS<small id="m-noads-price"></small></button>
   </nav>
+  <aside class="mside"><div class="money"><span id="m-money" data-noi18n>0 €</span></div>
+    <div class="tiny">DAILY MISSIONS</div><ul id="m-missions" class="missions"></ul></aside>
   <footer class="hint"><span id="m-best"></span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive · <kbd>F</kbd> Lichthupe · <kbd>H</kbd> horn · <kbd>C</kbd> camera / cockpit · <kbd>R</kbd> recover · <kbd>Q</kbd><kbd>E</kbd> radio · <kbd>Esc</kbd> pause</span></footer>
 </section>
 
 <!-- ============ GARAGE ============ -->
 <section id="s-garage" class="screen hidden">
   <div class="panel side">
-    <div class="tiny">GARAGE · <span id="g-index">1 / 14</span></div>
+    <div class="tiny">GARAGE · <span id="g-index">1 / 14</span> · <b id="g-money" class="money-s" data-noi18n>0 €</b></div>
     <h2 id="g-name">—</h2>
     <div class="muted" id="g-sub"></div>
     <div class="specs">
@@ -69,7 +82,7 @@
     </div>
     <div class="tiny">PAINT</div><div class="swatches" id="g-colors"></div>
     <div class="row"><button id="g-prev" class="sq">‹</button><button id="g-rev" class="grow">HOLD TO REV</button><button id="g-next" class="sq">›</button></div>
-    <div class="row"><button data-go="main" class="grow">BACK</button><button data-go="play" class="grow primary">DRIVE</button></div>
+    <div class="row"><button data-go="main" class="grow">BACK</button><button id="g-drive" class="grow primary">DRIVE</button></div>
   </div>
   <div class="drag-hint">drag to rotate</div>
 </section>
@@ -100,7 +113,9 @@
 <!-- ============ SETTINGS ============ -->
 <section id="s-settings" class="screen hidden">
   <div class="panel side wide">
-    <div class="tiny">SETTINGS</div><h2>Audio</h2>
+    <div class="tiny">SETTINGS</div>
+    <div class="form"><label>Language<select data-set="lang" id="set-lang"><option value="auto">Automatic (phone language)</option></select></label></div>
+    <h2>Audio</h2>
     <div class="form">
       <label>Master<input type="range" min="0" max="100" data-set="master"></label>
       <label>Music<input type="range" min="0" max="100" data-set="music"></label>
@@ -115,7 +130,7 @@
     </div>
     <h2>Display</h2>
     <div class="form">
-      <label>Graphics<select data-set="quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+      <label>Graphics<select data-set="quality"><option value="auto">Auto</option><option value="saver">Battery saver</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
       <label>Speed unit<select data-set="units"><option value="kmh">km/h</option><option value="mph">mph</option></select></label>
       <label>Camera shake<select data-set="shake"><option value="1">On</option><option value="0">Off</option></select></label>
     </div>
@@ -125,7 +140,10 @@
       <label>Gas<select data-set="gas"><option value="auto">Automatic (brake to slow)</option><option value="pedal">Gas pedal</option></select></label>
       <label>Vibration<select data-set="haptics"><option value="1">On</option><option value="0">Off</option></select></label>
     </div>
-    <div class="row"><button id="privacy" class="grow hidden">DATENSCHUTZ &amp; WERBUNG</button></div>
+    <h2>More</h2>
+    <div class="row"><button id="set-tutorial" class="grow">SHOW TUTORIAL</button><button id="set-policy" class="grow">PRIVACY POLICY</button></div>
+    <div class="row"><button id="privacy" class="grow hidden">DATENSCHUTZ &amp; WERBUNG</button><button id="set-restore" class="grow native-only hidden">Restore purchases</button></div>
+    <div class="row"><button id="set-errors" class="grow">SEND ERROR REPORT</button></div>
     <div class="row"><button data-go="back" class="grow primary">DONE</button></div>
   </div>
 </section>
@@ -139,7 +157,9 @@
 <section id="s-over" class="screen center hidden">
   <div class="panel"><div class="tiny" id="o-kicker">TOTALSCHADEN</div><h2 id="o-score">0</h2><div class="muted" id="o-best"></div>
     <div class="specs four"><div><b id="o-dist">0</b><small>km</small></div><div><b id="o-top">0</b><small id="o-unit">top km/h</small></div><div><b id="o-near">0</b><small>near misses</small></div><div><b id="o-fines">0</b><small>Blitzer</small></div></div>
-    <button id="o-continue" class="adcta"><span class="play">▶</span> WEITERFAHREN <small>1 Werbung ansehen</small></button>
+    <div class="earn"><b id="o-money" data-noi18n>+0 €</b> <span>earned</span></div>
+    <button id="o-double" class="adcta alt"><span class="play">▶</span> DOUBLE MONEY <small>1 Werbung ansehen</small></button>
+    <button id="o-continue" class="adcta"><span class="play">▶</span> <span>WEITERFAHREN</span> <small>1 Werbung ansehen</small></button>
     <nav class="menu small"><button data-go="play" class="primary">AGAIN</button><button data-go="garage">GARAGE</button><button data-go="main">MAIN MENU</button></nav></div>
 </section>
 

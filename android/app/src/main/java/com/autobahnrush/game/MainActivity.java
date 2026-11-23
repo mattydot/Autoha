@@ -10,6 +10,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(PlayGamesPlugin.class);
         super.onCreate(savedInstanceState);
         // the game draws edge to edge, keeps the screen on while open and hides the system bars
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);

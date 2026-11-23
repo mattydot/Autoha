@@ -116,6 +116,57 @@ while developing. Before publishing:
    your developer website.
 6. Never tap your own live ads; add your phone as a test device in AdMob.
 
+## "Remove ads" purchase
+
+`src/store.js` uses [`@capgo/native-purchases`](https://github.com/Cap-go/capacitor-native-purchases)
+(Google Play Billing). In the Play Console, under *Monetise → Products → In-app
+products*, create a one-time product with the id **`remove_ads`** and a price.
+Buying it switches off the interstitials and makes the rewarded features
+(keep going, double money, waive a fine) free and instant. The button appears
+on the main menu once Play reports the product; *Settings → Restore purchases*
+restores it on a new phone. Billing only works in builds installed from Play
+(internal testing track is enough), signed with your release key.
+
+## Google Play Games (leaderboards, achievements)
+
+The app has its own small plugin (`android/app/src/main/java/com/autobahnrush/game/PlayGamesPlugin.java`,
+Play Games services v2). It stays switched off until configured:
+
+1. Play Console → *Play Games services → Setup*: create the game project and
+   link your app (needs your release signing key's SHA-1).
+2. Create three leaderboards (best score, top speed in km/h, longest distance
+   in metres) and the achievements listed in `src/games.js`.
+3. Put the project id (a number) in `android/app/src/main/res/values/games.xml`,
+   and the leaderboard and achievement ids in `src/games.js`.
+
+When signed in, LEADERBOARDS and ACHIEVEMENTS appear on the main menu.
+
+## Crash and error reports
+
+JavaScript errors are kept on the phone (last 30) and can be sent from
+*Settings → Send error report* (share sheet or clipboard). For automatic crash
+reports, add Firebase Crashlytics: create a Firebase project for
+`com.autobahnrush.game`, put its `google-services.json` in `android/app/`
+(do not commit it if the repository is public; add it in CI from a secret),
+`npm install @capacitor-firebase/crashlytics`, and follow that plugin's Android
+setup. `src/errors.js` sends errors to Crashlytics automatically once the
+plugin is there.
+
+## Privacy policy URL
+
+`site/privacy.html` (generated from `PRIVACY.md`) is published to GitHub Pages
+by `.github/workflows/pages.yml`. Switch Pages on once: repository *Settings →
+Pages → Source: GitHub Actions*. The policy is then at
+`https://mattydot.github.io/Autoha/privacy.html`; use that URL in the Play
+Console. Put `app-ads.txt` (from AdMob) in `site/` as well.
+
+## Languages
+
+English, German, French, Spanish, Italian, Polish, Turkish, Dutch and
+Portuguese (`src/i18n.js`). The game uses the phone's language automatically;
+*Settings → Language* overrides it. Add the same languages to the Play store
+listing.
+
 ## Changing the icon
 
 `scripts/make_icons.py` draws the launcher icons, splash screens, PWA icons and

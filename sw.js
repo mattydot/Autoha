@@ -1,7 +1,7 @@
 // Offline support: everything the game needs is cached on first load, then
 // served from the cache while a fresh copy is fetched in the background
 // (so an update shows up on the next launch). Bump VERSION to force a refresh.
-const VERSION = 'autobahn-rush-12';
+const VERSION = 'autobahn-rush-13';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest',
   "css/style.css",
@@ -20,6 +20,11 @@ const FILES = [
   "src/land.js",
   "src/village.js",
   "src/ads.js",
+  "src/i18n.js",
+  "src/errors.js",
+  "src/games.js",
+  "src/store.js",
+  "src/career.js",
   "src/physics.js",
   "src/police.js",
   "src/props.js",

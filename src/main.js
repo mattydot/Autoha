@@ -12,6 +12,13 @@ import { Sky, WEATHERS } from './sky.js';
 import { Traffic } from './traffic.js';
 import { Police } from './police.js';
 import { Ads } from './ads.js';
+import { t, applyLang, resolveLang, LANGS, LANG_NAMES } from './i18n.js';
+import { Career, priceOf, PAINT_PRICE } from './career.js';
+import { Store } from './store.js';
+import { Games } from './games.js';
+import { installErrorLog, sendErrorReport } from './errors.js';
+installErrorLog();
+const PRIVACY_URL = 'https://mattydot.github.io/Autoha/privacy.html';
 import { GameAudio } from './audio.js';
 import { STATIONS } from './radio.js';
 import { Vehicle } from './vehicle.js';
@@ -24,10 +31,15 @@ const $ = (id) => document.getElementById(id);
 const KMH = 3.6, clamp = THREE.MathUtils.clamp, lerp = THREE.MathUtils.lerp;
 
 /* ------------------------------ settings ------------------------------ */
-const DEFAULTS = { master: 80, music: 70, engine: 80, sfx: 80, time: 'cycle', weather: 'dynamic', traffic: '1', quality: 'auto', units: 'kmh', shake: '1', car: 0, colors: {}, station: 0, best: 0, hidden: {}, cam: 0, controls: 'buttons', gas: 'auto', haptics: '1' };
+const DEFAULTS = { master: 80, music: 70, engine: 80, sfx: 80, time: 'cycle', weather: 'dynamic', traffic: '1', quality: 'auto', units: 'kmh', shake: '1', car: 0, colors: {}, station: 0, best: 0, hidden: {}, cam: 0, controls: 'buttons', gas: 'auto', haptics: '1', lang: 'auto', tutorialDone: false, noAds: false, lastCar: 0 };
 let settings = { ...DEFAULTS };
 try { settings = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('autobahn-rush') || '{}') }; } catch {}
 const save = () => { try { localStorage.setItem('autobahn-rush', JSON.stringify(settings)); } catch {} };
+const career = new Career(settings, save), store = new Store(), games = new Games();
+// language: the saved choice, or the phone's language
+{ const sel = document.getElementById('set-lang'); for (const l of LANGS) { const o = document.createElement('option'); o.value = l; o.textContent = LANG_NAMES[l]; o.setAttribute('data-noi18n', ''); sel.appendChild(o); } }
+applyLang(resolveLang(settings.lang));
+const euro = (n) => `${Math.round(n).toLocaleString('de-DE')} €`;
 
 /* ------------------------------ renderer ------------------------------ */
 const canvas = $('c');
@@ -41,8 +53,8 @@ scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 let composer = null, bloom = null, blurPass = null;
 let autoQ = isTouch ? 'medium' : 'high';
 function setupQuality() {
-  const q = settings.quality === 'auto' ? autoQ : settings.quality;
-  const dpr = Math.min(window.devicePixelRatio || 1, isTouch ? (q === 'high' ? 1.75 : q === 'medium' ? 1.3 : 1) : (q === 'high' ? 2 : q === 'medium' ? 1.5 : 1));
+  const saver = settings.quality === 'saver', q = settings.quality === 'auto' ? autoQ : saver ? 'low' : settings.quality;
+  const dpr = (saver ? 0.8 : 1) * Math.min(window.devicePixelRatio || 1, isTouch ? (q === 'high' ? 1.75 : q === 'medium' ? 1.3 : 1) : (q === 'high' ? 2 : q === 'medium' ? 1.5 : 1));
   renderer.setPixelRatio(dpr); renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   if (composer) { composer.dispose(); composer = null; blurPass = null; }
@@ -150,16 +162,16 @@ function readInput(dt) {
 function startRun() {
   world.reset(); traffic.reset(); police.reset(); fx.reset();
   veh.reset(LANES[1], 0, 100 / KMH);
-  Object.assign(run, { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0, continued: false, adDue: false });
+  Object.assign(run, { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0, continued: false, adDue: false, doubled: false, paidScore: 0, paidKm: 0, cleanKm: 0, statT: 0, statKm: 0, statLand: 0, statOff: 0 });
   camX = veh.x; view.camYaw = 0; $('toasts').innerHTML = '';
   toast('FREIE FAHRT', 'No limit. Don\'t hit anything.', 'good');
   showRadioPop();
   if (touchMode) { enterGameMode(); setTimeout(() => tc.calibrate(), 250); }
 }
 function toast(text, sub, cls = '') {
-  const t = document.createElement('div'); t.className = 'toast ' + cls; t.textContent = text;
-  if (sub) { const s = document.createElement('small'); s.textContent = sub; t.appendChild(s); }
-  const box = $('toasts'); box.appendChild(t); while (box.children.length > 3) box.firstChild.remove(); setTimeout(() => t.remove(), 2400);
+  const el = document.createElement('div'); el.className = 'toast ' + cls; el.textContent = t(text);
+  if (sub) { const s = document.createElement('small'); s.textContent = t(sub); el.appendChild(s); }
+  const box = $('toasts'); box.appendChild(el); while (box.children.length > 3) box.firstChild.remove(); setTimeout(() => el.remove(), 2400);
 }
 const SCREENS = ['main', 'garage', 'music', 'settings', 'pause', 'over'];
 function show(name) { for (const s of SCREENS) $('s-' + s).classList.toggle('hidden', s !== name); $('hud').classList.toggle('hidden', mode !== 'play'); $('touch').classList.toggle('hidden', !(touchMode && mode === 'play')); }
@@ -167,7 +179,10 @@ function go(target) {
   audio.click();
   if (target === 'back') target = prevScreen;
   switch (target) {
-    case 'play': mode = 'play'; startRun(); show(null); break;
+    case 'play':
+      if (!career.owns(CARS[settings.car].id)) setCar(settings.lastCar || 0);
+      if (!settings.tutorialDone) { showTutorial(() => go('play')); return; }
+      mode = 'play'; startRun(); show(null); break;
     case 'resume': mode = 'play'; show(null); if (touchMode) { enterGameMode(); tc.calibrate(); } break;
     case 'pause': mode = 'paused'; prevScreen = 'pause'; show('pause'); releaseWake(); break;
     case 'main': mode = 'menu'; prevScreen = 'main'; resetToCruise(); updateMainUI(); show('main'); break;
@@ -177,21 +192,48 @@ function go(target) {
     case 'over': mode = 'over'; show('over'); releaseWake(); break;
   }
 }
+function showTutorial(done) {
+  const el = $('tutorial'), steps = [...el.querySelectorAll('.tut-step')]; let i = 0;
+  const draw = () => { steps.forEach((s, k) => s.classList.toggle('hidden', k !== i)); $('tut-next').textContent = t(i === steps.length - 1 ? "LET'S GO" : 'NEXT'); };
+  const finish = () => { el.classList.add('hidden'); settings.tutorialDone = true; save(); done?.(); };
+  $('tut-next').onclick = () => { audio.click(); if (++i >= steps.length) finish(); else draw(); }; $('tut-skip').onclick = () => { audio.click(); finish(); };
+  draw(); el.classList.remove('hidden');
+}
 function resetToCruise() { traffic.reset(); police.reset(); fx.reset(); veh.reset(LANES[1], veh.s, veh.vs); }
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-go]'); if (!b) return; boot();
-  if (mode === 'over' && run.adDue) { run.adDue = false; await ads.interstitial(adOn, adOff); }   // every 3rd run, between runs
+  if (mode === 'over' && run.adDue && !settings.noAds) { run.adDue = false; await ads.interstitial(adOn, adOff); }   // every 3rd run, between runs
   go(b.dataset.go);
 });
 // keep going after a crash or an arrest by watching one rewarded ad (once per run)
 $('o-continue').addEventListener('click', async (e) => {
   e.stopPropagation(); if (run.continued || mode !== 'over') return; boot();
-  const ok = await ads.rewarded(adOn, adOff);
+  const ok = await rewarded();
   if (ok) revive(); else toast('KEINE WERBUNG VERFÜGBAR', 'Try again in a moment', '');
 });
+$('set-tutorial').addEventListener('click', () => showTutorial());
+$('set-policy').addEventListener('click', () => { window.open(PRIVACY_URL, '_system') || (location.href = PRIVACY_URL); });
+$('set-errors').addEventListener('click', async () => { const r = await sendErrorReport(`car ${veh.spec?.id} · lang ${settings.lang}`); if (r === 'copied') toast('Report copied – paste it into an e-mail or GitHub issue', '', ''); });
+// in the app: "remove ads" purchase and Google Play Games
+$('m-noads').addEventListener('click', async () => { boot(); if (await store.buy()) { settings.noAds = true; save(); toast('Ads removed. Thank you!', '', 'good'); $('m-noads').classList.add('hidden'); } });
+$('set-restore').addEventListener('click', async () => { if (await store.restore()) { settings.noAds = true; save(); toast('Ads removed. Thank you!', '', 'good'); $('m-noads').classList.add('hidden'); } });
+$('m-lb').addEventListener('click', () => games.showLeaderboards()); $('m-ach').addEventListener('click', () => games.showAchievements());
+if (window.Capacitor?.isNativePlatform?.()) {
+  store.init().then((owned) => { if (owned) { settings.noAds = true; save(); }
+    $('m-noads').classList.toggle('hidden', settings.noAds || !store.available); $('set-restore').classList.toggle('hidden', !store.available); if (store.price) $('m-noads-price').textContent = store.price; });
+  games.init().then((on) => $('m-games').classList.toggle('hidden', !on));
+}
 // consent can be changed at any time (needed where the consent form applies)
 $('privacy').addEventListener('click', () => ads.privacyOptions());
 if (window.Capacitor?.isNativePlatform?.()) $('privacy').classList.remove('hidden');
+// a rewarded ad (free and instant for players who bought "remove ads"); the game is held while it shows
+async function rewarded() { if (settings.noAds) return true; const was = mode; if (was === 'play') mode = 'paused'; const ok = await ads.rewarded(adOn, adOff); if (was === 'play' && mode === 'paused') mode = 'play'; return ok; }
+$('o-double').addEventListener('click', async (e) => { e.stopPropagation(); if (run.doubled) return; boot();
+  if (await rewarded()) { run.doubled = true; career.earn(run.earned); $('o-money').textContent = '+' + euro(run.earned * 2); $('o-double').classList.add('hidden'); audio.bonus(); } });
+// a speed-camera fine can be waived by watching an ad (offered for a few seconds)
+let waiveT = 0;
+$('h-waive').addEventListener('click', async (e) => { e.stopPropagation(); const f = run.lastFine; if (!f) return; $('h-waive').classList.add('hidden'); run.lastFine = 0;
+  if (await rewarded()) { run.score += f; toast('FINE WAIVED', '+' + f, 'good'); } });
 function revive() {
   run.continued = true; run.adDue = false; ads.runs = Math.max(0, ads.runs - 1);   // a continued run is the same try
   const { rd, h } = roadHeading();
@@ -219,11 +261,16 @@ function fmtSpeed(ms) { return Math.round(ms * (settings.units === 'mph' ? 2.236
 
 function gameOver() {
   const best = Math.max(settings.best, Math.round(run.score)), isBest = run.score > settings.best && run.score > 0; settings.best = best; save();
-  $('o-kicker').textContent = run.end || 'TOTALSCHADEN';
-  $('o-score').textContent = Math.round(run.score).toLocaleString('en'); $('o-best').textContent = isBest ? 'NEW BEST' : 'BEST ' + best.toLocaleString('en');
+  $('o-kicker').textContent = t(run.end || 'TOTALSCHADEN');
+  $('o-score').textContent = Math.round(run.score).toLocaleString('en'); $('o-best').textContent = t(isBest ? 'NEW BEST' : 'BEST ' + best.toLocaleString('en'));
   $('o-dist').textContent = (veh.s / PACE / 1000).toFixed(1); $('o-top').textContent = fmtSpeed(run.top); $('o-unit').textContent = 'top ' + (settings.units === 'mph' ? 'mph' : 'km/h');
   $('o-near').textContent = run.near; $('o-fines').textContent = run.fines;
-  run.adDue = ads.countRun(); $('o-continue').classList.toggle('hidden', !!run.continued);
+  run.adDue = !settings.noAds && ads.countRun(); $('o-continue').classList.toggle('hidden', !!run.continued);
+  // money for this run (once, even if the run is continued later: only the new part counts)
+  const km = veh.s / PACE / 1000, earned = career.payout(run.score - (run.paidScore || 0), km - (run.paidKm || 0)); run.paidScore = run.score; run.paidKm = km;
+  career.earn(earned); run.earned = earned; $('o-money').textContent = '+' + euro(earned); $('o-double').classList.toggle('hidden', !!run.doubled || earned < 20);
+  for (const el of document.querySelectorAll('.adcta small')) el.classList.toggle('hidden', !!settings.noAds);
+  games.submit('score', run.score); games.submit('speed', run.top * KMH); games.submit('distance', km * 1000);
   go('over');
 }
 function endRun(reason) { if (run.wreckT > 0) return; run.end = reason; run.wreckT = 0.001; }
@@ -315,6 +362,17 @@ function recover() {
   Object.assign(veh, { psi: h, r: 0, vx: Math.sin(h) * 4, vs: Math.cos(h) * 4, x }); run.recoverT = 0; run.score = Math.max(0, run.score - 500); toast('ZURÜCK AUF DER SPUR', '−500', '');
 }
 
+/* ------------------------------ career ------------------------------ */
+function mission(stat, v, how) {
+  for (const q of career.track(stat, v, how)) { toast('MISSION COMPLETE', `${t(q.text, { n: q.target })} · +${euro(q.reward)}`, 'good'); audio.bonus(); }
+  if (career.daily().list.every((q) => q.done)) games.unlock('missions');
+}
+function renderMissions() {
+  const ul = $('m-missions'); ul.innerHTML = '';
+  for (const q of career.daily().list) { const li = document.createElement('li'); if (q.done) li.className = 'done';
+    li.innerHTML = `<small>${q.done ? '✓' : '+' + euro(q.reward)}</small>${t(q.text, { n: q.target })}<i><u style="width:${Math.min(100, q.progress / q.target * 100)}%"></u></i>`; ul.appendChild(li); }
+}
+
 /* ------------------------------ scoring & rules ------------------------------ */
 function rules(dt) {
   const vk = veh.vs * KMH, limit = world.limitAt(veh.s, veh.x);
@@ -326,15 +384,19 @@ function rules(dt) {
   if (rk !== run.roadKey && run.time > 0.5) {
     const was = run.roadKind; run.roadKey = rk; run.roadKind = rd ? rd.kind : 'A';
     if (!rd) { if (was && was !== 'A') toast('AUTOBAHN', 'Back on the A 9', 'good'); }
-    else if (rd.kind === 'ramp') { const j = world.land.junctions.find((q) => q.exit === rd || q.entry === rd); toast(rd.toAutobahn ? 'AUFFAHRT' : `AUSFAHRT ${j ? j.no : ''}`, rd.toAutobahn ? 'A 9 · München' : j ? j.name : '', ''); }
+    else if (rd.kind === 'ramp') { if (!rd.toAutobahn) mission('exits', 1); const j = world.land.junctions.find((q) => q.exit === rd || q.entry === rd); toast(rd.toAutobahn ? 'AUFFAHRT' : `AUSFAHRT ${j ? j.no : ''}`, rd.toAutobahn ? 'A 9 · München' : j ? j.name : '', ''); }
     else if (rd.kind === 'land' && was !== 'land') toast('LANDSTRASSE', 'Limit 100 · mind the curves and tractors', '');
     else if (rd.kind === 'kreis') toast('KREISSTRASSE', 'Narrow and quiet', '');
     else if (rd.kind === 'dirt') toast('FELDWEG', 'Gravel · Landwirtschaftlicher Verkehr frei', '');
     else if (rd.kind === 'trail') toast('WALDWEG', 'Mud, ruts and puddles', '');
-    else if (rd.kind === 'area') toast('OFFROAD-GELÄNDE', 'Rocks, mud, water · go anywhere inside', 'good');
+    else if (rd.kind === 'area') { toast('OFFROAD-GELÄNDE', 'Rocks, mud, water · go anywhere inside', 'good'); games.unlock('offroad'); }
   } else if (run.time <= 0.5) { run.roadKey = rk; run.roadKind = rd ? rd.kind : 'A'; }
   const town = rd && rd.kind === 'land' ? world.land.townAt(veh.s) : null;
-  if (town !== run.town) { if (town) toast(town.name.toUpperCase(), 'Ortschaft · 50 km/h', ''); run.town = town; }
+  if (town !== run.town) { if (town) { toast(town.name.toUpperCase(), 'Ortschaft · 50 km/h', ''); mission('towns', 1); } run.town = town; }
+  // distance-based missions, counted once a second
+  const dKm = Math.max(0, veh.vs) * dt / 1000; run.statKm += dKm; if (rd && (rd.kind === 'land' || rd.kind === 'kreis' || rd.kind === 'street')) run.statLand += dKm; if (rd && (rd.kind === 'trail' || rd.kind === 'area' || rd.kind === 'dirt')) run.statOff += dKm;
+  run.cleanKm = veh.damage < 0.5 ? run.cleanKm + dKm : 0; if (police.phase === 'hunt') run.sawHunt = true;
+  if ((run.statT += dt) > 1) { run.statT = 0; mission('km', run.statKm); mission('landKm', run.statLand); mission('offKm', run.statOff); run.statKm = run.statLand = run.statOff = 0; mission('top', veh.speed * KMH, 'max'); mission('cleanKm', run.cleanKm, 'max'); }
   const onA = !rd;
   if (limit !== run.limit) { if (limit) toast(`TEMPOLIMIT ${limit}`, onA ? 'Blitzer ahead? Maybe.' : '', ''); else if (onA) toast('FREIE FAHRT', 'End of all restrictions', 'good'); run.limit = limit; }
   for (const b of world.blitzers) if (!b.done && veh.s > b.s) {
@@ -342,9 +404,10 @@ function rules(dt) {
     if (over > 9) { const fine = Math.round(over * 15); run.score = Math.max(0, run.score - fine); run.fines++; b.obj.userData.flash.opacity = 1; audio.blitz();
       const f = $('flash'); f.style.transition = 'none'; f.style.background = '#ff3020'; f.style.opacity = 0.55; requestAnimationFrame(() => { f.style.transition = 'opacity 0.5s'; f.style.opacity = 0; });
       toast('GEBLITZT!', `${fmtSpeed(veh.vs)} in a ${b.limit} zone · −${fine}`, 'bad');
+      run.lastFine = fine; $('h-waive').classList.remove('hidden'); clearTimeout(waiveT); waiveT = setTimeout(() => $('h-waive').classList.add('hidden'), 6000);
       if (over > 50 && police.trigger('RASEREI', 60, 4)) setTimeout(() => toast('RASEREI', `${Math.round(over)} km/h zu schnell · Polizei alarmiert`, 'bad'), 900); }
   }
-  for (const club of [300, 350, 400]) if (vk >= club && !run.clubs[club]) { run.clubs[club] = 1; run.score += club * 5; toast(`${club} KM/H CLUB`, `+${club * 5}`, 'good'); audio.bonus(); }
+  for (const club of [300, 350, 400]) if (vk >= club && !run.clubs[club]) { run.clubs[club] = 1; if (club === 300) games.unlock('club300'); if (club === 400) games.unlock('club400'); run.score += club * 5; toast(`${club} KM/H CLUB`, `+${club * 5}`, 'good'); audio.bonus(); }
   // overtakes and near misses (clean passes only: touching is a crime, not a bonus)
   for (const c of traffic.cars) {
     if (c.crashed) continue;
@@ -353,7 +416,7 @@ function rules(dt) {
       c.passed = true; const gap = Math.abs(dx) - sw, dvk = (veh.vs - c.vs) * KMH;
       if (gap < 5 && dvk > 15) audio.whoosh(clamp((c.x - veh.x) / 4, -1, 1), clamp(dvk / 200, 0, 1) * (c.kind === 'truck' ? 1.3 : 1));
       if (gap < 1.15 && gap > 0.02 && dvk > 30 && !c.touched && run.wreckT <= 0 && !c.police && c.dir !== -1) {
-        run.combo = Math.min(9, run.combo + 1); run.comboT = 5; run.near++; const pts = Math.round((100 + dvk) * run.combo); run.score += pts;
+        run.combo = Math.min(9, run.combo + 1); run.comboT = 5; run.near++; mission('near', 1); const pts = Math.round((100 + dvk) * run.combo); run.score += pts;
         toast(`NEAR MISS ×${run.combo}`, `+${pts}`, 'good'); audio.bonus(); haptic(12);
       }
     } else if (c.passed && c.s - c.L / 2 > veh.s + veh.L / 2 + 4) c.passed = false;
@@ -362,9 +425,9 @@ function rules(dt) {
   const res = police.update(dt, veh, traffic, sky.night); world.policeActive = police.active;
   if (police.events.includes('spikes')) { audio.crash(0.5); audio.glass(); shake = Math.max(shake, 0.45); haptic([60, 30, 60, 30, 120]); }
   if (res === 'busted') { endRun('FESTGENOMMEN'); toast('FESTGENOMMEN', 'Aussteigen, Hände aufs Dach.', 'bad'); audio.busted(); haptic([80, 60, 80, 60, 200]); }
-  else if (res === 'escaped') { run.score += 2500; toast('ENTKOMMEN!', 'Polizei abgehängt · +2500', 'good'); audio.bonus(); }
+  else if (res === 'escaped') { run.score += 2500; toast('ENTKOMMEN!', 'Polizei abgehängt · +2500', 'good'); audio.bonus(); mission('escapes', 1); games.unlock('firstEscape'); if (police.phase === 'hunt' || run.sawHunt) games.unlock('hunt'); }
   else if (res === 'gaveup') { run.score += 1500; toast('POLIZEI GIBT AUF', '+1500', 'good'); audio.bonus(); }
-  else if (res === 'ticket') { const fine = { RASEREI: 900, UNFALLFLUCHT: 1200 }[police.reason] || 600; run.score = Math.max(0, run.score - fine); toast('VERKEHRSKONTROLLE', `Bußgeld −${fine} · Gute Fahrt!`, ''); }
+  else if (res === 'ticket') { mission('tickets', 1); games.unlock('ticket'); const fine = { RASEREI: 900, UNFALLFLUCHT: 1200 }[police.reason] || 600; run.score = Math.max(0, run.score - fine); toast('VERKEHRSKONTROLLE', `Bußgeld −${fine} · Gute Fahrt!`, ''); }
   for (const m of police.msgs.splice(0)) { toast(m.title, m.sub, m.kind); if (m.kind === 'bad') haptic([40, 40, 40]); }
   // stuck facing the wrong way: offer a recovery
   if (!veh.wrecked && veh.speed < 3 && Math.abs(veh.psi - roadHeading().h) > 0.5 && (run.roadKind !== 'area')) { run.recoverT += dt; if (run.recoverT > 1.2 && !run.hintShown) { run.hintShown = true; toast(touchMode ? 'TAP ↻' : 'DRÜCKE R', 'to get back on track', ''); } if (run.recoverT > 6) recover(); }
@@ -492,10 +555,10 @@ function updateHUD() {
   const sign = $('h-sign'), over = limit && vk > limit + 5, cls = 'sign' + (limit ? '' : ' free') + (over ? ' over' : '');
   if (sign.className !== cls) sign.className = cls; setText('h-sign', limit ? String(settings.units === 'mph' ? Math.round(limit / 1.609) : limit) : '');
   document.querySelector('.speed').classList.toggle('over', !!over);
-  setText('h-clock', sky.clockString()); const w = WEATHERS[sky.weather]; setText('h-weather', `${w.icon} ${w.label}`);
+  setText('h-clock', sky.clockString()); const w = WEATHERS[sky.weather]; setText('h-weather', `${w.icon} ${t(w.label)}`);
   $('touch').querySelector('.recover').classList.toggle('hidden', !(run.recoverT > 1.2));
   const slip = $('h-slip'); slip.classList.toggle('hidden', !(veh.sliding || veh.onSlick) || veh.rolling);
-  setText('h-slip', veh.onSlick ? (world.spills.find((s) => s.kind === 'oil') ? 'ÖL!' : 'GLATT!') : 'SLIDE');
+  setText('h-slip', t(veh.onSlick ? (world.spills.find((s) => s.kind === 'oil') ? 'ÖL!' : 'GLATT!') : 'SLIDE'));
   // police pill
   const pol = $('h-police'); pol.classList.toggle('hidden', !police.active);
   if (police.active) { const live = police.chasing, near = live.reduce((m, c) => Math.min(m, Math.abs(c.s - veh.s)), Infinity);
@@ -504,12 +567,13 @@ function updateHUD() {
     $('h-police-bar').style.width = (stop ? clamp(police.stopT / 2.5, 0, 1) : clamp(police.bustT / 2.4, 0, 1)) * 100 + '%'; }
 }
 let popT = 0;
-function showRadioPop() { const info = audio.radio?.info; if (!info) return; setText('rp-station', info.station); setText('rp-track', info.title ? `${info.title} — ${info.artist}` : '');
+function showRadioPop() { const info = audio.radio?.info; if (!info) return; setText('rp-station', t(info.station)); setText('rp-track', info.title ? `${info.title} — ${info.artist}` : '');
   const el = $('radio-pop'); el.classList.add('show'); clearTimeout(popT); popT = setTimeout(() => el.classList.remove('show'), 3600); }
 
 /* ------------------------------ menus ------------------------------ */
 function updateMainUI() {
-  $('m-car').textContent = veh.spec ? veh.spec.name : ''; $('m-best').textContent = settings.best ? `BEST ${settings.best.toLocaleString('en')} PTS` : '';
+  $('m-car').textContent = veh.spec ? veh.spec.name : ''; $('m-best').textContent = settings.best ? t(`BEST ${settings.best.toLocaleString('en')} PTS`) : '';
+  $('m-money').textContent = euro(settings.money); renderMissions();
   $('m-radio').textContent = audio.radio && audio.radio.station >= 0 ? STATIONS[audio.radio.station].name : 'Radio';
 }
 function updateGarageUI() {
@@ -519,9 +583,19 @@ function updateGarageUI() {
   $('g-b1').style.width = (s.vmax / 440 * 100) + '%'; $('g-b2').style.width = clamp((5.2 - s.zeroTo100) / 3 * 100, 10, 100) + '%'; $('g-b3').style.width = clamp((s.handling - 0.6) / 0.55 * 100, 10, 100) + '%';
   const box = $('g-colors'); box.innerHTML = '';
   s.colors.forEach((c, i) => { const b = document.createElement('button'); b.style.background = '#' + c.toString(16).padStart(6, '0'); if (i === ci) b.className = 'on';
-    b.onclick = () => { settings.colors[s.id] = i; save(); setCarColor(carMesh, s, i); updateGarageUI(); audio.click(); }; box.appendChild(b); });
+    const have = career.paintOwned(s.id, i); if (!have) { b.classList.add('locked'); b.title = euro(PAINT_PRICE); }
+    b.onclick = () => { if (!have) { if (!career.owns(s.id) || !career.buyPaint(s.id, i)) { toast(career.owns(s.id) ? 'Not enough money' : 'LOCKED · ' + euro(priceOf(s.id)), euro(PAINT_PRICE), 'bad'); return; } toast('New paint', '−' + euro(PAINT_PRICE), 'good'); }
+      settings.colors[s.id] = i; save(); setCarColor(carMesh, s, i); updateGarageUI(); audio.click(); }; box.appendChild(b); });
+  const own = career.owns(s.id), price = priceOf(s.id), drive = $('g-drive');
+  drive.textContent = own ? t('DRIVE') : t((settings.money >= price ? 'BUY · ' : 'LOCKED · ') + euro(price));
+  drive.classList.toggle('primary', own || settings.money >= price); $('g-money').textContent = euro(settings.money);
+  if (own) { settings.lastCar = settings.car; save(); }
   updateMainUI();
 }
+$('g-drive').onclick = () => { boot(); const s = veh.spec;
+  if (career.owns(s.id)) { go('play'); return; }
+  if (career.buyCar(s.id)) { toast('Unlocked!', s.name, 'good'); audio.bonus(); updateGarageUI(); if (career.st.owned.length >= 8) games.unlock('collector'); }
+  else toast('Not enough money', euro(priceOf(s.id)), 'bad'); };
 $('g-prev').onclick = () => { setCar(settings.car - 1); audio.click(); }; $('g-next').onclick = () => { setCar(settings.car + 1); audio.click(); };
 const rev = $('g-rev'); rev.addEventListener('pointerdown', () => { boot(); revHeld = true; }); for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) rev.addEventListener(ev, () => { revHeld = false; });
 let dragging = false, dragX = 0;
@@ -532,7 +606,7 @@ addEventListener('pointermove', (e) => { if (dragging) { const dx = e.clientX - 
 let musicSel = 0, confirmDel = null;   // { i, until }: a delete waiting for its second click
 function updateRadioUI(info) {
   info = info || audio.radio?.info; if (!info) return;
-  $('mu-station').textContent = info.station + (info.freq ? ' · ' + info.freq : ''); $('mu-track').textContent = info.title || '—'; $('mu-artist').textContent = info.artist;
+  $('mu-station').textContent = t(info.station) + (info.freq ? ' · ' + info.freq : ''); $('mu-track').textContent = info.title || '—'; $('mu-artist').textContent = info.artist;
   for (const b of document.querySelectorAll('#mu-stations button')) b.classList.toggle('on', +b.dataset.i === audio.radio.station);
   if (mode !== 'play' && !$('s-music').classList.contains('hidden')) renderTracks();
   updateMainUI();
@@ -580,16 +654,18 @@ function applyAudioSettings() { audio.vol = { master: settings.master / 100, mus
 function applyWorldSettings() { sky.setTimeMode(settings.time); sky.setWeatherMode(settings.weather); traffic.density = +settings.traffic; }
 for (const el of document.querySelectorAll('[data-set]')) {
   const k = el.dataset.set; el.value = settings[k];
-  el.addEventListener('input', () => { settings[k] = el.type === 'range' ? +el.value : el.value; save(); applyAudioSettings(); applyWorldSettings(); applyControls(); if (k === 'quality') setupQuality(); });
+  el.addEventListener('input', () => { settings[k] = el.type === 'range' ? +el.value : el.value; save(); applyAudioSettings(); applyWorldSettings(); applyControls(); if (k === 'quality') setupQuality(); if (k === 'lang') { applyLang(resolveLang(settings.lang)); updateMainUI(); updateGarageUI(); updateMusicUI(); } });
 }
 
 /* ------------------------------ main loop ------------------------------ */
 const clock = new THREE.Clock();
 let elapsed = 0;
 const perf = { t: 0, n: 0 };
+let saverAcc = 0;
 function frame() {
   requestAnimationFrame(frame);
-  const real = clock.getDelta();
+  if (settings.quality === 'saver') { saverAcc += clock.getDelta(); if (saverAcc < 1 / 31) return; }   // battery saver: about 30 fps
+  const real = settings.quality === 'saver' ? Math.min(0.1, saverAcc) : clock.getDelta(); saverAcc = 0;
   simulate(Math.min(0.05, real));
   render();
   // Auto graphics: if driving runs below ~28 fps for a few seconds, step the quality down
