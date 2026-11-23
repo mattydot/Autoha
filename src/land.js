@@ -11,6 +11,7 @@
 // in the same road coordinates: x lateral (+ right), s along the Autobahn.
 // Scenery lives in world.frame like everything else (x, y, z = -s).
 import * as THREE from 'three';
+import { Village, placeSign } from './village.js';
 
 const STEP = 2;                          // centre-line sample spacing (m)
 // The road network is planned much further ahead than scenery is placed, so every side road, ramp and
@@ -34,7 +35,8 @@ const KIND = {
   dirt:  { hw: 2.6, verge: 5.5, grip: 0.72, y: 0.022 },  // Feldweg: gravel, grass down the middle
   trail: { hw: 2.5, verge: 6.0, grip: 0.6, y: 0.018 },   // Waldweg / off-road track: mud, ruts, puddles, bumps
   area:  { hw: 26, verge: 3.0, grip: 0.62, y: 0.012 },   // Offroad-Gelände: an open patch of rough ground
-  ramp:  { hw: 2.3, verge: 4.0, grip: 1.0, y: 0.04 },   // Autobahn ramp: one lane, solid edges
+  ramp:  { hw: 2.3, verge: 4.0, grip: 1.0, y: 0.04 },
+  street: { hw: 3.2, verge: 4.5, grip: 1.0, y: 0.03 },  // village street   // Autobahn ramp: one lane, solid edges
 };
 
 /* ------------------------------------------------------------------ */
@@ -206,6 +208,8 @@ export class Land {
       wood: new THREE.MeshLambertMaterial({ color: 0x6d5236 }),
       dash: new THREE.MeshBasicMaterial({ map: tex(16, 64, (g, w, h) => { g.fillStyle = '#383a3e'; g.fillRect(0, 0, w, h); g.fillStyle = '#e9e9e4'; g.fillRect(0, 0, w, h / 2); }), polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }),
     };
+    this.mats.street = this.mats.kreis;
+    this.village = new Village((m, k) => world._snowy(m, k));
     this._scenery(); this._pools();
     this.reset();
   }
@@ -233,6 +237,11 @@ export class Land {
     this.rocks = inst(new THREE.DodecahedronGeometry(1, 0), this.world._snowy(new THREE.MeshStandardMaterial({ color: 0x8a8578, roughness: 0.95, flatShading: true }), 0.6), 240);
     this.puddles = inst(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), this.mats.water, 200); this.puddles.position.y = 0.048;
     this.muds = inst(new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2), this.mats.mud, 200); this.muds.position.y = 0.045;
+    // village street lamps and garden hedges
+    this.lampPole = inst(new THREE.CylinderGeometry(0.07, 0.1, 5, 6).translate(0, 2.5, 0), new THREE.MeshStandardMaterial({ color: 0x3a3f44, metalness: 0.6, roughness: 0.4 }), 400);
+    this.lampMat = new THREE.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffd890, emissiveIntensity: 0 });
+    this.lampHead = inst(new THREE.BoxGeometry(0.9, 0.16, 0.36).translate(0.4, 5, 0), this.lampMat, 400);
+    this.hedges = inst(new THREE.BoxGeometry(6.2, 1.15, 0.9).translate(0, 0.58, 0), this.world._snowy(new THREE.MeshLambertMaterial({ color: 0x2f5a26 }), 0.7), 900);
     this.bales = inst(new THREE.CylinderGeometry(0.75, 0.75, 1.2, 14).rotateZ(Math.PI / 2).translate(0, 0.75, 0), new THREE.MeshLambertMaterial({ color: 0xffffff }), 400);
     for (let i = 0; i < 400; i++) this.bales.setColorAt(i, new THREE.Color(0.9, 0.9, 0.88));
     const fieldMat = this.world._snowy(new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: -0.5, polygonOffsetUnits: -1 }), 0.9);
@@ -286,13 +295,14 @@ export class Land {
 
   reset() {
     for (const r of this.roads || []) for (const c of r.chunks || []) this._dropChunk(c);
-    this.roads = []; this.junctions = []; this.signQueue = []; this.gaps = []; this.patches = []; this.rockList = [];
+    for (const o of this.vObjs || []) this.frame.remove(o);
+    this.roads = []; this.junctions = []; this.signQueue = []; this.gaps = []; this.patches = []; this.rockList = []; this.towns = []; this.vObjs = [];
     for (const o of [...this.signs, ...this.houses, ...this.stands, ...this.lakes]) { o.userData.s = -1e9; o.visible = false; }
-    for (const m of [this.posts, this.leit, this.leitBand, this.tTrunk, this.tCone, this.tBlob, this.fields, this.rocks, this.puddles, this.muds, this.bales]) { const Z = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < m.count; i++) m.setMatrixAt(i, Z); m.instanceMatrix.needsUpdate = true; m.userData.i = 0; }
+    for (const m of [this.posts, this.leit, this.leitBand, this.tTrunk, this.tCone, this.tBlob, this.fields, this.rocks, this.puddles, this.muds, this.bales, this.lampPole, this.lampHead, this.hedges]) { const Z = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < m.count; i++) m.setMatrixAt(i, Z); m.instanceMatrix.needsUpdate = true; m.userData.i = 0; }
     this.exitNo = 60 + ((Math.random() * 6) | 0);
     // the Landstraße: starts well to the right of the Autobahn
     this.L = new Road('land', -BEHIND - 200, 'L'); this.roads.push(this.L);
-    this.gen = { x: 260, th: 0, k: 0, left: 0, nextJ: 2600 + rand(0, 900), nextBR: 400 + rand(0, 400), nextBL: 900 + rand(0, 600), plans: [], farm: 300, field: -600, tree: -600, leitS: -600, stand: 0, lake: 500 };
+    this.gen = { x: 260, th: 0, k: 0, left: 0, nextJ: 2600 + rand(0, 900), nextBR: 400 + rand(0, 400), nextBL: 900 + rand(0, 600), plans: [], farm: 300, field: -600, tree: -600, leitS: -600, stand: 0, lake: 500, nextTown: 1400 + rand(0, 800), townPlan: null };
     this.L.xs.push(this.gen.x);
     this.built = -BEHIND - 200; this.s = 0;
     this._extend(AHEAD);
@@ -324,19 +334,26 @@ export class Land {
       const sn = L.s1;
       if (sn >= G.nextJ + 420 && !G.jDone) { G.jDone = true; this._junction(G.nextJ); }
       if (G.jDone && sn > G.nextJ + 1800) { G.lastJ = G.nextJ; G.nextJ = sn + rand(4200, 7000); G.jDone = false; }
+      // villages: every few kilometres, clear of the Anschlussstellen
+      if (!G.townPlan && sn >= G.nextTown) {
+        if (G.nextJ - sn > 2600 && sn > (G.lastJ ?? -1e9) + 1300) { const len = rand(700, 1000); G.townPlan = { s0: sn, s1: sn + len, name: pick(PLACES) }; }
+        else G.nextTown = sn + 400;
+      }
+      if (G.townPlan && sn >= G.townPlan.s1 + 40) { this._town(G.townPlan); G.nextTown = G.townPlan.s1 + rand(3200, 5600); G.townPlan = null; }
       // build planned side roads once the Landstraße exists all along them
       for (const B of G.plans) if (!B.done && sn >= B.end) { B.done = true; this._branch(B); }
       G.plans = G.plans.filter((B) => !B.done);
       // right side: a side road every few hundred metres (Kreisstraße, Feldweg or Waldweg)
       // up to two at once: one close to the Landstraße and one further out
       const right = G.plans.filter((B) => B.side > 0);
-      if (sn >= G.nextBR && right.length < 2) {
-        const outer = right.length === 1 && !right[0].outer, len = rand(900, 2600), k = Math.random();
-        G.plans.push({ s0: sn, end: sn + len, side: 1, outer, kind: k < 0.38 ? 'kreis' : k < 0.66 ? 'dirt' : 'trail' }); G.nextBR = sn + rand(250, 700);
+      const inTown = (x) => G.townPlan && x > G.townPlan.s0 - 120 && x < G.townPlan.s1 + 120;
+      if (sn >= G.nextBR && right.length < 3 && !inTown(sn)) {
+        const tier = [0, 1, 2].find((t) => !right.some((B) => (B.tier || 0) === t)) ?? 0, len = rand(900, 2600), k = Math.random();
+        G.plans.push({ s0: sn, end: sn + len, side: 1, tier, outer: tier > 0, kind: k < 0.38 ? 'kreis' : k < 0.66 ? 'dirt' : 'trail' }); G.nextBR = sn + rand(180, 520);
       }
       // left side (between the Landstraße and the Autobahn), clear of the junctions
       const room = G.nextJ - 2100 - sn;
-      if (sn >= G.nextBL && !G.plans.some((B) => B.side < 0) && sn > (G.lastJ ?? -1e9) + 1000 && room > 700) {
+      if (sn >= G.nextBL && !G.plans.some((B) => B.side < 0) && sn > (G.lastJ ?? -1e9) + 1000 && room > 700 && !inTown(sn)) {
         const len = Math.min(rand(800, 1800), room), k = Math.random(); G.plans.push({ s0: sn, end: sn + len, side: -1, kind: k < 0.3 ? 'kreis' : k < 0.6 ? 'dirt' : 'trail' }); G.nextBL = sn + len + rand(100, 500);
       }
     }
@@ -398,7 +415,7 @@ export class Land {
     r.joins = parent; r.side = side; this.roads.push(r);
     const sd = side > 0 ? 1 : -1;
     if (kind === 'kreis') this.signQueue.push({ s: s0 - 90, road: parent, side: 1, kind: 'ww', a: pick(PLACES) + '|' + ((3 + Math.random() * 8) | 0), b: sd > 0 ? 'R' : 'L', ww: true });
-    else this.signQueue.push({ s: s0 + 60, road: r, side: 1, kind: 'z250', plate: kind === 'trail' ? ['Forstwirtschaftlicher', 'Verkehr frei'] : ['Landwirtschaftlicher', 'Verkehr frei'] });
+    else if (kind !== 'street') this.signQueue.push({ s: s0 + 60, road: r, side: 1, kind: 'z250', plate: kind === 'trail' ? ['Forstwirtschaftlicher', 'Verkehr frei'] : ['Landwirtschaftlicher', 'Verkehr frei'] });
     this.signQueue.push({ s: s1 - 60, road: r, side: 1, kind: 'yield' });
     // puddles and mud on the unsurfaced ones
     if (kind === 'trail' || kind === 'dirt') for (let k = 0, n = kind === 'trail' ? (len / 90) | 0 : (len / 260) | 0; k < n; k++) {
@@ -407,7 +424,7 @@ export class Land {
   }
   _branch(B) {
     const L = this.L, len = B.end - B.s0;
-    let A = B.outer ? rand(320, 520) : B.kind === 'kreis' ? rand(140, 260) : B.kind === 'dirt' ? rand(60, 150) : rand(80, 200);
+    let A = B.tier === 2 ? rand(560, 780) : B.outer ? rand(320, 520) : B.kind === 'kreis' ? rand(140, 260) : B.kind === 'dirt' ? rand(60, 150) : rand(80, 200);
     if (B.side < 0) { let xmin = Infinity; for (let s = B.s0; s < B.end; s += 20) xmin = Math.min(xmin, L.xAt(s)); A = Math.min(A, xmin - 60); if (A < 35) return; }
     const r = this._sideRoad(L, B.s0, B.end, B.kind, B.side, A);
     // more to find: a Feldweg or Waldweg off a Kreisstraße, an off-road area off a Waldweg
@@ -427,6 +444,27 @@ export class Land {
     for (let k = 0; k < 10; k++) { const ss = s0 + rand(0.15, 0.85) * len; this._patch(a.xAt(ss) + rand(-0.8, 0.8) * a.hwAt(ss), ss, rand(2.5, 6), Math.random() < 0.45 ? 'water' : 'mud'); }
     this.signQueue.push({ s: s0 - 30, road: parent, side: side, kind: 'board', a: pick(['OFFROAD', 'KIESGRUBE', 'GELÄNDE']), b: '' });
   }
+  // a Dorf on the Landstraße: Ortstafeln, 50 limit, houses both sides, a church, lamps, a side street
+  _town(T) {
+    const L = this.L, len = T.s1 - T.s0; this.towns.push(T); L.limits.push({ s0: T.s0, s1: T.s1, limit: 50 });
+    this.signQueue.push({ s: T.s0, road: L, side: 1, kind: 'ort', a: T.name, b: 'Landkreis Pfaffenhofen', off: 1.4 });
+    this.signQueue.push({ s: T.s1, road: L, side: 1, kind: 'ortEnd', a: T.name, b: pick(PLACES), off: 1.4 });
+    const st = this._sideRoad(L, T.s0 + len * 0.18, T.s0 + len * 0.82, 'street', 1, rand(60, 85));
+    const add = (o, x, s, rot) => { o.position.set(x, 0, -s); o.rotation.y = rot; o.userData.s = s; this.frame.add(o); this.vObjs.push(o); };
+    const row = (rd, a, b, sides, depth) => {
+      for (let s = a; s < b; s += rand(21, 29)) for (const sd of sides) {
+        if (Math.random() < 0.12) continue; const th = Math.atan(rd.slope(s)), off = rd.hw + rd.verge + depth, x = rd.xAt(s) + sd * off / Math.cos(th);
+        if (!this.clear(x, s, 5.5)) continue; add(this.village.house(), x, s, -th + (sd > 0 ? -Math.PI / 2 : Math.PI / 2)); }
+    };
+    row(L, T.s0 + 30, T.s1 - 20, [-1, 1], 7.5); row(st, st.s0 + 60, st.s1 - 60, [-1, 1], 7);
+    const sc = T.s0 + len * 0.5, thc = Math.atan(L.slope(sc)), xc = L.xAt(sc) - (L.hw + L.verge + 14) / Math.cos(thc);
+    if (this.clear(xc, sc, 12)) add(this.village.churchMesh(), xc, sc, -thc + Math.PI / 2);
+    for (const rd of [L, st]) for (let s = (rd === L ? T.s0 : st.s0) + 10; s < (rd === L ? T.s1 : st.s1); s += 32) for (const sd of [-1, 1]) {
+      const th = Math.atan(rd.slope(s)), x = rd.xAt(s) + sd * (rd.hw + 1.3) / Math.cos(th), i = this.lampPole.userData.i; this.lampPole.userData.i = this.lampHead.userData.i = (i + 1) % this.lampPole.count;
+      _M.compose(_v.set(x, 0, -s), _q.setFromEuler(_e.set(0, -th + (sd > 0 ? Math.PI : 0), 0)), _sc.set(1, 1, 1)); this.lampPole.setMatrixAt(i, _M); this.lampHead.setMatrixAt(i, _M); }
+    this.lampPole.instanceMatrix.needsUpdate = true; this.lampHead.instanceMatrix.needsUpdate = true;
+  }
+
   _rock(x, s, sz) {
     const i = this.rocks.userData.i; this.rocks.userData.i = (i + 1) % this.rocks.count;
     this.rocks.setMatrixAt(i, _M.compose(_v.set(x, sz * 0.35, -s), _q.setFromEuler(_e.set(rand(0, 3), rand(0, 3), 0)), _sc.set(sz, sz * 0.7, sz * 1.1))); this.rocks.instanceMatrix.needsUpdate = true;
@@ -451,6 +489,7 @@ export class Land {
   }
 
   /* --------------------------- queries --------------------------- */
+  townAt(s, r = this.L) { if (r !== this.L) return null; for (const T of this.towns) if (s >= T.s0 && s <= T.s1) return T; return null; }
   roadsAt(s) { const out = []; for (const r of this.roads) if (s >= r.s0 && s <= r.s1) out.push(r); return out; }
   railGap(s) { for (const g of this.gaps) if (s >= g[0] && s <= g[1]) return true; return false; }
   nearJunction(s, m) { for (const j of this.junctions) if (s > j.s0 - m && s < j.s1 + m) return true;
@@ -518,6 +557,10 @@ export class Land {
       const th = Math.atan(r.slope(s)), x = r.xAt(s) + side * (r.hw + r.verge) / Math.cos(th);
       const other = this.roads.some((o) => o !== r && o.has(s) && Math.abs(x - o.xAt(s)) < o.hwAt(s) + o.verge + 0.5) || x < WALL_R + 2;
       if (other) { pts.push(null); continue; }
+      if (r.kind === 'street' || this.townAt(s, r)) {   // in a village: garden hedges instead of the wildlife fence
+        if (Math.round(s / 6) % 1 === 0) { const j = this.hedges.userData.i; this.hedges.userData.i = (j + 1) % this.hedges.count;
+          this.hedges.setMatrixAt(j, _M.compose(_v.set(x, 0, -s - 3), _q.setFromEuler(_e.set(0, Math.PI / 2 - th, 0)), _sc.set(1, 1, 1))); this.hedges.instanceMatrix.needsUpdate = true; }
+        pts.push(null); continue; }
       const i = this.posts.userData.i; this.posts.userData.i = (i + 1) % this.posts.count;
       this.posts.setMatrixAt(i, _M.makeTranslation(x, 0, -s)); pts.push([x, -s]);
     }
@@ -560,6 +603,7 @@ export class Land {
   }
   _leitposts(r, a, b) {
     for (let s = Math.ceil(a / 50) * 50; s < b; s += 50) for (const sd of [-1, 1]) {
+      if (r.kind === 'street' || this.townAt(s, r)) continue;
       const th = Math.atan(r.slope(s)), x = r.xAt(s) + sd * (r.hwAt(s) + 0.8) / Math.cos(th); if (x < WALL_R + 1) continue;
       const i = this.leit.userData.i; this.leit.userData.i = (i + 1) % this.leit.count; _M.makeRotationY(-th).setPosition(x, 0, -s);
       this.leit.setMatrixAt(i, _M); this.leitBand.setMatrixAt(i, _M);
@@ -624,8 +668,9 @@ export class Land {
       else if (q.kind === 'a330') { w = 1.0; h = 1.0; y = 2.2; }
       else if (q.kind === 'board') { w = 2.2; h = 2.2; y = 1.5; two = true; }
       else if (q.kind === 'yield' || q.kind.startsWith('curve') || q.kind === 'deer') { w = 0.9; h = 0.9; }
+      if (q.kind === 'ort' || q.kind === 'ortEnd') { w = 1.7; h = 1.06; y = 2.0; two = true; }
       if (q.plate) plate = signFace('plate', q.plate[0], q.plate[1]);
-      u.face.material.map = signFace(q.kind, q.a, q.b); u.face.material.needsUpdate = true;
+      u.face.material.map = q.kind === 'ort' ? placeSign(q.a, q.b, false) : q.kind === 'ortEnd' ? placeSign(q.a, '', true, q.b) : signFace(q.kind, q.a, q.b); u.face.material.needsUpdate = true;
       u.face.scale.set(w, h, 1); u.face.position.set(0, y, 0.065); u.back.scale.set(w * 0.98, h * 0.98, 1); u.back.position.set(0, y, 0.055);   // in front of the posts
       u.back.visible = q.kind === 'vorweg' || q.ww || q.kind === 'ausfahrt';
       const top = y + h / 2, post = q.bake ? y - h / 2 : top - 0.05;
@@ -649,6 +694,8 @@ export class Land {
       this.roads = this.roads.filter((r) => { if (r !== this.L && r.s1 < lim) { for (const c of r.chunks || []) this._dropChunk(c); return false; }
         if (r.chunks) r.chunks = r.chunks.filter((c) => { if (c.b < lim) { this._dropChunk(c); return false; } return true; }); return true; });
       this.patches = this.patches.filter((p) => p.s > lim - 50);
+      this.vObjs = this.vObjs.filter((o) => { if (o.userData.s < lim - 100) { this.frame.remove(o); return false; } return true; });
+      this.towns = this.towns.filter((T) => T.s1 > lim - 500);
       this.L.trim(lim - 200); this.junctions = this.junctions.filter((j) => j.s1 > lim - 2000); this.gaps = this.gaps.filter((g) => g[1] > lim - 200);
     }
     // weather on the surfaces
@@ -656,6 +703,7 @@ export class Land {
     for (const k of ['land', 'kreis', 'ramp']) { const m = this.mats[k]; m.roughness = 0.9 - wet * 0.6; m.metalness = wet * 0.22; m.color.setScalar(1 - wet * 0.32); }
     this.mats.dirt.color.setScalar(1 - wet * 0.25);
     this.winMat.emissive.setRGB(sky.night * 0.55, sky.night * 0.42, sky.night * 0.2);
+    this.lampMat.emissiveIntensity = sky.night * 4;
   }
 }
 const _e = new THREE.Euler(), _M = new THREE.Matrix4(), _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _sc = new THREE.Vector3(), _c = new THREE.Color(), _Z = new THREE.Matrix4().makeScale(0, 0, 0);

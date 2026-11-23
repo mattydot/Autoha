@@ -85,6 +85,37 @@ keytool -genkeypair -v -keystore upload.keystore -alias upload -keyalg RSA -keys
    people, no gambling, no user content); category Racing.
 6. Target API level is 36, which meets Google Play's current requirement.
 
+## Ads (Google AdMob)
+
+The app uses [`@capacitor-community/admob`](https://github.com/capacitor-community/admob)
+(`src/ads.js`):
+
+- **Interstitial** between runs: after every 3rd game over, when the player
+  taps AGAIN / GARAGE / MAIN MENU (`ADS.every` in `src/ads.js`).
+- **Rewarded**: the yellow "WEITERFAHREN · 1 Werbung ansehen" button on the
+  game-over screen. Watching it repairs the car, shakes off the police and
+  continues the same run (once per run).
+- **Consent**: Google's UMP consent form is shown on first start where it is
+  required (EEA/UK/CH); Settings → "Datenschutz & Werbung" reopens it.
+- In the browser a placeholder stands in for both ad types; no ads are loaded.
+
+The repository ships with Google's public **test** ids, which are safe to use
+while developing. Before publishing:
+
+1. Create the app in the [AdMob console](https://admob.google.com), plus one
+   *Interstitial* and one *Rewarded* ad unit.
+2. Put the **app id** (`ca-app-pub-…~…`) in
+   `android/app/src/main/AndroidManifest.xml` (`com.google.android.gms.ads.APPLICATION_ID`).
+3. Put the two **ad unit ids** (`ca-app-pub-…/…`) in `src/ads.js` and set
+   `testing: false`.
+4. In AdMob, set up the GDPR message under *Privacy & messaging* (otherwise
+   the consent form has nothing to show).
+5. In the Play Console, declare **Contains ads**, fill in the *Data safety*
+   form for AdMob (advertising ID, approximate location, app interactions,
+   diagnostics; shared with Google for advertising), and add `app-ads.txt` to
+   your developer website.
+6. Never tap your own live ads; add your phone as a test device in AdMob.
+
 ## Changing the icon
 
 `scripts/make_icons.py` draws the launcher icons, splash screens, PWA icons and

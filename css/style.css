@@ -230,3 +230,15 @@ body.touch button, body.touch .btn, body.touch select { min-height: 44px; }
   #touch .actions { top: 40%; }
 }
 @media (orientation: portrait) { #s-garage, #s-music, #s-settings { justify-content: flex-end; } #s-garage .panel.side { max-height: 56vh; } }
+
+/* ---------- ads ---------- */
+.adcta { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; margin: 14px 0 4px; padding: 14px 18px; border: 0; border-radius: 12px; cursor: pointer;
+  font: 700 17px/1 inherit; letter-spacing: 0.06em; color: #111; background: linear-gradient(180deg, #ffd23a, #f2a900); box-shadow: 0 6px 18px rgba(242, 169, 0, 0.35); }
+.adcta small { font-weight: 600; font-size: 12px; letter-spacing: 0.02em; opacity: 0.75; }
+.adcta .play { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #111; color: #ffd23a; font-size: 12px; }
+.adcta.hidden { display: none; }
+.adph { position: fixed; inset: 0; z-index: 99; display: grid; place-items: center; background: rgba(4, 6, 9, 0.92); backdrop-filter: blur(6px); }
+.adph-box { width: min(420px, 88vw); padding: 26px; border-radius: 16px; background: #15181d; border: 1px solid #2a2f37; text-align: center; color: #e8ecf2; }
+.adph-box h2 { margin: 8px 0; } .adph-box button { margin-top: 14px; width: 100%; padding: 12px; border-radius: 10px; border: 0; font-weight: 700; }
+.adph-box button.primary { background: #ffd23a; color: #111; } .adph-box button.primary:disabled { opacity: 0.5; }
+.adph-box button.skip { background: transparent; color: #8a93a0; }

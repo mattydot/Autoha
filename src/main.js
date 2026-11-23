@@ -11,6 +11,7 @@ import { World, LANES, PACE } from './world.js';
 import { Sky, WEATHERS } from './sky.js';
 import { Traffic } from './traffic.js';
 import { Police } from './police.js';
+import { Ads } from './ads.js';
 import { GameAudio } from './audio.js';
 import { STATIONS } from './radio.js';
 import { Vehicle } from './vehicle.js';
@@ -149,7 +150,7 @@ function readInput(dt) {
 function startRun() {
   world.reset(); traffic.reset(); police.reset(); fx.reset();
   veh.reset(LANES[1], 0, 100 / KMH);
-  Object.assign(run, { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0 });
+  Object.assign(run, { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0, continued: false, adDue: false });
   camX = veh.x; view.camYaw = 0; $('toasts').innerHTML = '';
   toast('FREIE FAHRT', 'No limit. Don\'t hit anything.', 'good');
   showRadioPop();
@@ -177,11 +178,36 @@ function go(target) {
   }
 }
 function resetToCruise() { traffic.reset(); police.reset(); fx.reset(); veh.reset(LANES[1], veh.s, veh.vs); }
-document.addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) { boot(); go(b.dataset.go); } });
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-go]'); if (!b) return; boot();
+  if (mode === 'over' && run.adDue) { run.adDue = false; await ads.interstitial(adOn, adOff); }   // every 3rd run, between runs
+  go(b.dataset.go);
+});
+// keep going after a crash or an arrest by watching one rewarded ad (once per run)
+$('o-continue').addEventListener('click', async (e) => {
+  e.stopPropagation(); if (run.continued || mode !== 'over') return; boot();
+  const ok = await ads.rewarded(adOn, adOff);
+  if (ok) revive(); else toast('KEINE WERBUNG VERFÜGBAR', 'Try again in a moment', '');
+});
+// consent can be changed at any time (needed where the consent form applies)
+$('privacy').addEventListener('click', () => ads.privacyOptions());
+if (window.Capacitor?.isNativePlatform?.()) $('privacy').classList.remove('hidden');
+function revive() {
+  run.continued = true; run.adDue = false; ads.runs = Math.max(0, ads.runs - 1);   // a continued run is the same try
+  const { rd, h } = roadHeading();
+  let x; if (rd) { const lo = rd.kind === 'land' ? 2.2 : rd.kind === 'kreis' ? 1.75 : 0, xc = rd.xAt(veh.s); x = rd.kind === 'area' ? clamp(veh.x, xc - rd.hwAt(veh.s) + 2, xc + rd.hwAt(veh.s) - 2) : xc + lo; }
+  else x = LANES.reduce((b, l) => (Math.abs(l - veh.x) < Math.abs(b - veh.x) ? l : b), LANES[1]);
+  veh.reset(x, veh.s, 16); veh.psi = h; veh.vx = Math.sin(h) * 16; veh.vs = Math.cos(h) * 16;
+  police.reset();
+  for (const c of [...traffic.cars]) if (Math.abs(c.s - veh.s) < 140) { traffic._release(c); traffic.cars.splice(traffic.cars.indexOf(c), 1); }
+  world.obstacles = world.obstacles.filter((o) => o.rock || Math.abs(o.s - veh.s) > 60 || Math.abs(o.x - veh.x) > 6);
+  run.wreckT = 0; run.end = ''; camX = veh.x; mode = 'play'; show(null); if (touchMode) enterGameMode();
+  toast('WEITER GEHT\'S', 'Wagen repariert · Polizei abgeschüttelt', 'good');
+}
 
 let booted = false;
 async function boot() {
-  if (booted) { audio.resume(); return; } booted = true;
+  if (booted) { audio.resume(); return; } booted = true; ads.init();
   await audio.init(); applyAudioSettings(); audio.setEngine(veh.spec);
   audio.radio.hidden = settings.hidden;
   audio.radio.onChange = (info) => { settings.station = audio.radio.station; save(); updateRadioUI(info); showRadioPop(); };
@@ -196,7 +222,9 @@ function gameOver() {
   $('o-kicker').textContent = run.end || 'TOTALSCHADEN';
   $('o-score').textContent = Math.round(run.score).toLocaleString('en'); $('o-best').textContent = isBest ? 'NEW BEST' : 'BEST ' + best.toLocaleString('en');
   $('o-dist').textContent = (veh.s / PACE / 1000).toFixed(1); $('o-top').textContent = fmtSpeed(run.top); $('o-unit').textContent = 'top ' + (settings.units === 'mph' ? 'mph' : 'km/h');
-  $('o-near').textContent = run.near; $('o-fines').textContent = run.fines; go('over');
+  $('o-near').textContent = run.near; $('o-fines').textContent = run.fines;
+  run.adDue = ads.countRun(); $('o-continue').classList.toggle('hidden', !!run.continued);
+  go('over');
 }
 function endRun(reason) { if (run.wreckT > 0) return; run.end = reason; run.wreckT = 0.001; }
 
@@ -208,6 +236,8 @@ function grip() {
 }
 const env = { mu: null, base: 1, assist: true, canRoll: true };
 const PAINT = () => carMesh.userData.paint.color.getHex();
+const ads = new Ads();
+const adOn = () => audio.setHidden(true), adOff = () => audio.setHidden(document.hidden);
 
 function physics(dt, driving) {
   const n = 4, h = dt / n, base = grip();
@@ -303,6 +333,8 @@ function rules(dt) {
     else if (rd.kind === 'trail') toast('WALDWEG', 'Mud, ruts and puddles', '');
     else if (rd.kind === 'area') toast('OFFROAD-GELÄNDE', 'Rocks, mud, water · go anywhere inside', 'good');
   } else if (run.time <= 0.5) { run.roadKey = rk; run.roadKind = rd ? rd.kind : 'A'; }
+  const town = rd && rd.kind === 'land' ? world.land.townAt(veh.s) : null;
+  if (town !== run.town) { if (town) toast(town.name.toUpperCase(), 'Ortschaft · 50 km/h', ''); run.town = town; }
   const onA = !rd;
   if (limit !== run.limit) { if (limit) toast(`TEMPOLIMIT ${limit}`, onA ? 'Blitzer ahead? Maybe.' : '', ''); else if (onA) toast('FREIE FAHRT', 'End of all restrictions', 'good'); run.limit = limit; }
   for (const b of world.blitzers) if (!b.done && veh.s > b.s) {
