@@ -199,7 +199,8 @@ export class Traffic {
     let vt = Math.min(c.vd, vCurve, (r.limitAt(c.s) || 100) / 3.6 + 1);
     let gap = 1e9, lead = null; const lx = (s) => r.xAt(s) + c.dir * this._laneOff(r);
     for (const o of this.cars) { if (o === c || !o.land || o.land !== r || o.dir !== c.dir) continue; const g = (o.s - c.s) * c.dir - (o.L + c.L) / 2; if (g > -2 && g < gap) { gap = g; lead = o.crashed ? 0 : o.speed; } }
-    if (active && Math.abs(player.x - lx(player.s)) < 2.2) { const g = (player.s - c.s) * c.dir - (player.L + c.L) / 2; if (g > -2 && g < gap) { gap = g; lead = Math.max(0, player.v * c.dir); } }
+    // the player in this lane, or merging into it (e.g. off a ramp): give way
+    if (active && Math.abs(player.x - lx(player.s)) < 4.6) { const g = (player.s - c.s) * c.dir - (player.L + c.L) / 2; if (g > -2 && g < gap) { gap = g; lead = Math.max(0, player.v * c.dir); } }
     const safe = (5 + c.speed * 0.8) * PACE;
     if (lead !== null && gap < safe * 1.6) vt = Math.min(vt, gap < safe ? lead * Math.max(0, gap / safe) : lead);
     const acc = clamp((vt - c.speed) * 1.1, gap < 8 ? -9 : -5, c.kind === 'tractor' ? 0.5 : 2);

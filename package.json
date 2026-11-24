@@ -1,6 +1,6 @@
 {
   "name": "autobahn-rush",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "private": true,
   "description": "Autobahn Rush: a German motorway driving game for the browser and Android",
   "scripts": {

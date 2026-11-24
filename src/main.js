@@ -302,7 +302,8 @@ const adOn = () => audio.setHidden(true), adOff = () => audio.setHidden(document
 function physics(dt, driving) {
   const n = 4, h = dt / n, base = grip();
   env.base = base; env.mu = (x, s) => base * world.surface(x, s);
-  env.land = !world.land.onAutobahn(veh.x, veh.s);   // country-road steering, and no pull back to the Autobahn's heading
+  env.land = !world.land.onAutobahn(veh.x, veh.s);
+  env.drag = (x, s) => (x > 8.9 ? world.land.drag(x, s) : 0);   // grass, mud and rough ground slow you down   // country-road steering, and no pull back to the Autobahn's heading
   const inp = driving && !veh.wrecked ? input : { throttle: 0, brake: veh.wrecked ? 0.6 : 0, steer: 0 };
   for (let k = 0; k < n; k++) {
     veh.step(h, inp, env);

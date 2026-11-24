@@ -86,6 +86,7 @@ export class Vehicle {
     this.mu = (muF + muR) / 2; this.muBase = env.base;
     this.onSlick = Math.min(muFL, muFR, muRL, muRR) < env.base * 0.45;   // oil or milk, not a wheel on the grass
 
+    const surfDrag = (env.drag ? env.drag(this.x, this.s) : 0) * (spec.body.offroad ? 0.5 : 1);   // grass / mud / rough ground; off-road tyres cope better
     // gearbox and engine
     let rpm = Math.max(spec.idle, spec.redline * au / this.gearV[this.gear - 1]);
     if (this.shiftT > 0) this.shiftT -= h;
@@ -160,7 +161,7 @@ export class Vehicle {
     // sum in the car frame
     const cd = Math.cos(this.delta), sd = Math.sin(this.delta);
     const cr = Math.cos(dR), sr = Math.sin(dR);
-    const FX = FxF * cd - FyF * sd + FxR * cr - FyR * sr - this.kd * u * Math.abs(u) - (au > 0.3 ? sgn(u) * (0.012 + 0.055 * (this.flats || 0)) * m * G : 0);
+    const FX = FxF * cd - FyF * sd + FxR * cr - FyR * sr - this.kd * u * Math.abs(u) - (au > 0.3 ? sgn(u) * (0.012 + 0.055 * (this.flats || 0) + surfDrag * (0.5 + au / 20) * Math.min(1, au / 3)) * m * G : 0);
     const FY = FxF * sd + FyF * cd + FxR * sr + FyR * cr;
     let Mz = a * (FxF * sd + FyF * cd) - b * (FxR * sr + FyR * cr);
     // uneven grip left/right: the side that grips more pulls harder

@@ -527,6 +527,14 @@ export class Land {
     const p = this.patchAt(x, s); if (p) g = Math.min(g, p.kind === 'water' ? 0.5 : 0.42);
     return g;
   }
+  // rolling resistance off the asphalt, as a share of the car's weight (grows with speed in the vehicle model)
+  drag(x, s) {
+    let d = 0.32, onRoad = false;   // grass
+    for (const r of this.roads) { if (s < r.s0 || s > r.s1) continue; if (Math.abs(x - r.xAt(s)) <= r.hwAt(s) + 0.15) { onRoad = true;
+      const k = r.kind === 'area' ? 0.1 : r.kind === 'trail' ? 0.08 : r.kind === 'dirt' ? 0.04 : 0; d = Math.min(d, k); } }
+    const p = this.patchAt(x, s); if (p) d = Math.max(d, p.kind === 'mud' ? 0.28 : 0.2);
+    return onRoad || p ? d : 0.32;
+  }
   patchAt(x, s) { for (const p of this.patches) { const dx = x - p.x, ds = s - p.s; if (dx * dx + ds * ds < p.r * p.r) return p; } return null; }
   // how bumpy the ground is (0 smooth asphalt .. ~0.08 churned off-road ground)
   rough(x, s) {
