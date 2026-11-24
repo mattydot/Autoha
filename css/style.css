@@ -267,3 +267,6 @@ body.touch button, body.touch .btn, body.touch select { min-height: 44px; }
 @media (orientation: portrait) { .mside { position: static; width: auto; margin: 10px 0; } }
 @media (max-height: 420px) and (orientation: landscape) { .mside { top: 12px; padding: 10px 12px; } .money { font-size: 20px; margin-bottom: 6px; } .missions li { font-size: 11px; } }
 .menu button small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 48%; }
+
+input.code { min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: inherit; font: inherit; letter-spacing: 0.08em; }
+input.code.ok::placeholder { color: #4ade80; } input.code.bad::placeholder { color: #ff6a5f; }

@@ -212,6 +212,19 @@ $('o-continue').addEventListener('click', async (e) => {
   if (ok) revive(); else toast('KEINE WERBUNG VERFÜGBAR', 'Try again in a moment', '');
 });
 $('set-tutorial').addEventListener('click', () => showTutorial());
+// codes: only a hash is stored here, never the code itself
+const CODES = { '5778141d117aae66ecb8a295ee0a533b6fb1f95fed6b36ef4b0241235abeca83': 'all' };
+async function redeem(code) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code.trim()));
+  const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  if (CODES[hex] !== 'all') return false;
+  settings.owned = CARS.map((c) => c.id); settings.paints = Object.fromEntries(CARS.map((c) => [c.id, c.colors.map((_, i) => i)]));
+  settings.noAds = true; settings.money = Math.max(settings.money, 1000000); settings.tutorialDone = true; save();
+  $('m-noads').classList.add('hidden'); games.unlock('collector'); updateMainUI(); updateGarageUI(); return true;
+}
+$('set-code-go').addEventListener('click', async () => { const el = $('set-code'); const ok = await redeem(el.value).catch(() => false); el.value = '';
+  el.placeholder = t(ok ? 'Everything unlocked' : 'Invalid code'); el.classList.toggle('ok', ok); el.classList.toggle('bad', !ok); if (ok) audio.bonus(); });
+$('set-code').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') $('set-code-go').click(); });
 $('set-policy').addEventListener('click', () => { window.open(PRIVACY_URL, '_system') || (location.href = PRIVACY_URL); });
 $('set-errors').addEventListener('click', async () => { const r = await sendErrorReport(`car ${veh.spec?.id} · lang ${settings.lang}`); if (r === 'copied') toast('Report copied – paste it into an e-mail or GitHub issue', '', ''); });
 // in the app: "remove ads" purchase and Google Play Games

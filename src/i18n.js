@@ -101,6 +101,9 @@ const D = [
   ['SEND ERROR REPORT', 'SEND ERROR REPORT', 'FEHLERBERICHT SENDEN', 'ENVOYER UN RAPPORT D’ERREUR', 'ENVIAR INFORME DE ERRORES', 'INVIA SEGNALAZIONE ERRORI', 'WYŚLIJ RAPORT BŁĘDÓW', 'HATA RAPORU GÖNDER', 'FOUTRAPPORT VERSTUREN', 'ENVIAR RELATÓRIO DE ERROS'],
   ['SHOW TUTORIAL', 'SHOW TUTORIAL', 'ANLEITUNG ZEIGEN', 'AFFICHER LE TUTORIEL', 'VER TUTORIAL', 'MOSTRA TUTORIAL', 'POKAŻ SAMOUCZEK', 'EĞİTİMİ GÖSTER', 'UITLEG TONEN', 'VER TUTORIAL'],
   ['Report copied – paste it into an e-mail or GitHub issue', 'Report copied – paste it into an e-mail or GitHub issue', 'Bericht kopiert – in eine E-Mail oder ein GitHub-Issue einfügen', 'Rapport copié – collez-le dans un e-mail', 'Informe copiado: pégalo en un correo', 'Rapporto copiato: incollalo in un’e-mail', 'Raport skopiowany – wklej go do e-maila', 'Rapor kopyalandı – e-postaya yapıştırın', 'Rapport gekopieerd – plak het in een e-mail', 'Relatório copiado – cola-o num e-mail'],
+  ['REDEEM', 'REDEEM', 'EINLÖSEN', 'VALIDER', 'CANJEAR', 'RISCATTA', 'REALIZUJ', 'KULLAN', 'INWISSELEN', 'RESGATAR'],
+  ['Everything unlocked', 'Everything unlocked', 'Alles freigeschaltet', 'Tout est débloqué', 'Todo desbloqueado', 'Tutto sbloccato', 'Wszystko odblokowane', 'Her şeyin kilidi açıldı', 'Alles ontgrendeld', 'Tudo desbloqueado'],
+  ['Invalid code', 'Invalid code', 'Ungültiger Code', 'Code invalide', 'Código no válido', 'Codice non valido', 'Nieprawidłowy kod', 'Geçersiz kod', 'Ongeldige code', 'Código inválido'],
   ['DONE', 'DONE', 'FERTIG', 'TERMINÉ', 'LISTO', 'FATTO', 'GOTOWE', 'TAMAM', 'KLAAR', 'CONCLUÍDO'],
   // ---- pause / game over ----
   ['PAUSED', 'PAUSED', 'PAUSE', 'PAUSE', 'PAUSA', 'PAUSA', 'PAUZA', 'DURAKLATILDI', 'GEPAUZEERD', 'EM PAUSA'],
