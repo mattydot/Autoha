@@ -1,3 +1,3 @@
 Download **AutobahnRush.apk** below, open it on your Android phone and allow installing apps from this source when asked.
 
-- Settings: a code field (admin code unlocks all cars and paints, removes ads and adds money)
+- Chase camera on country roads, ramps and off-road: stays right behind the car and turns with it through bends (Autobahn camera unchanged)

@@ -91,7 +91,7 @@ const rig = new THREE.Group(); rig.rotation.order = 'YXZ'; scene.add(rig);
 let carMesh = null, shadow = null;
 const veh = new Vehicle(CARS[0]);
 const run = { score: 0, combo: 0, comboT: 0, near: 0, fines: 0, top: 0, time: 0, limit: 0, clubs: {}, wreckT: 0, end: '', recoverT: 0, hintShown: false, lastHit: 0 };
-const view = { pitch: 0, lean: 0, camYaw: 0, head: new THREE.Vector3(), headRoll: 0, pull: 0, rush: 0 };
+const view = { pitch: 0, lean: 0, camYaw: 0, head: new THREE.Vector3(), headRoll: 0, pull: 0, rush: 0, off: 0 };
 const SPEED_FEEL = 1.5;
 let mode = 'menu', prevScreen = 'main', camMode = +settings.cam || 0, shake = 0, orbit = 0.75, orbitV = 0, revHeld = false, flashT = 0, camX = 0, touchMode = isTouch;
 
@@ -513,10 +513,13 @@ function updateCamera(dt, t) {
   cockpit.setVisible(inCar); $('hud').classList.toggle('incar', inCar);
   const near = inCar ? 0.05 : 0.3; if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
   if (mode === 'play' || mode === 'paused' || mode === 'over') {
-    camX += (veh.x - camX) * Math.min(1, dt * 6);
+    // off the Autobahn roads bend, so the camera sits squarely behind the car and turns fully with it
+    // (on the Autobahn it lags a little sideways, which keeps lane changes smooth); blended over ~1 s
+    const offA = veh.x > 8 && !world.land.onAutobahn(veh.x, veh.s) ? 1 : 0; view.off += (offA - view.off) * Math.min(1, dt * 1.5);
+    camX += (veh.x - camX) * Math.min(1, dt * (6 + 40 * view.off));
     // the chase camera swings round with the car, but lags behind spins
-    const target = veh.rolling ? view.camYaw : clamp(veh.psi, -1.2, 1.2) * 0.85;
-    view.camYaw += (target - view.camYaw) * Math.min(1, dt * (Math.abs(veh.r) > 1 ? 1.2 : 3));
+    const target = veh.rolling ? view.camYaw : clamp(veh.psi, -1.2 - 0.4 * view.off, 1.2 + 0.4 * view.off) * (0.85 + 0.15 * view.off);
+    view.camYaw += (target - view.camYaw) * Math.min(1, dt * (Math.abs(veh.r) > 1 ? 1.2 : 3 + 2 * view.off));
     const cy = Math.cos(view.camYaw), syw = Math.sin(view.camYaw);
     if (inCar) {
       // eye in the driver's seat: the head moves with g-forces, looks a little into turns
@@ -534,8 +537,8 @@ function updateCamera(dt, t) {
     const pull = Math.min(1.2, vn) ** 2 * (camMode === 0 ? 1.9 : 2.4);
     view.pull += (pull - view.pull) * Math.min(1, dt * (pull > view.pull ? 1.1 : 2.5));      // eases back under acceleration, snaps in when braking
     const back = (camMode === 0 ? 5.9 : 10.2) + view.pull + (portrait ? 1.6 : 0), up = (camMode === 0 ? 2.0 - vn * 0.3 : 3.6 - vn * 0.4) + (portrait ? 0.7 : 0);
-    const cx = (veh.rolling ? veh.x : camX * 0.9 + veh.x * 0.1);
-    camera.position.set(cx - syw * back * 0.9, up, pz + cy * back);
+    const cx = (veh.rolling ? veh.x : camX * 0.9 * (1 - view.off) + veh.x * (0.1 + 0.9 * view.off));
+    camera.position.set(cx - syw * back * (0.9 + 0.1 * view.off), up, pz + cy * back);
     _t.set(veh.x + syw * 14, camMode === 0 ? 1.05 : 0.8, pz - cy * (camMode === 0 ? 16 : 20));
     if (veh.rolling) _t.set(veh.x, veh.yc, pz);
     const fov = viewFov(56 + 30 * vn * vn / (0.35 + vn));
